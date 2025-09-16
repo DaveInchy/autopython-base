@@ -1,0 +1,88 @@
+{
+  "zulrah_positions": {
+    "ZulrahPosCenter": {"x": 6720, "y": 7616},
+    "ZulrahPosWest": {"x": 8000, "y": 7360},
+    "ZulrahPosEast": {"x": 5440, "y": 7360},
+    "ZulrahPosNorth": {"x": 6720, "y": 6208}
+  },
+  "player_movement_tiles": {
+    "SWCornerTile": {"x": 7488, "y": 7872},
+    "SWCornerTileMelee": {"x": 7232, "y": 8000},
+    "WPillar": {"x": 7232, "y": 7232},
+    "WPillarN": {"x": 7232, "y": 7104},
+    "EPillar": {"x": 6208, "y": 7232},
+    "EPillarN": {"x": 6208, "y": 7104},
+    "SECornerTile": {"x": 6208, "y": 8000},
+    "SECornerTileMelee": {"x": 5952, "y": 7744},
+    "Middle": {"x": 6720, "y": 6848}
+  },
+  "zulrah_forms": {
+    "2042": {"name": "Green (Magic)", "combat_style": "Magic", "color": [0, 255, 0], "protection_prayer_index": 0},
+    "2043": {"name": "Red (Melee)", "combat_style": "Melee", "color": [255, 0, 0], "protection_prayer_index": 1},
+    "2044": {"name": "Blue (Ranged)", "combat_style": "Ranged", "color": [0, 0, 255], "protection_prayer_index": 2}
+  },
+  "zulrah_rotations": {
+    "Phase1": {
+      "types": [2042, 2043, 2044, 2042, 2044, 2043, 2042, 2044, 2042, 2043],
+      "positions": [
+        "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosEast",
+        "ZulrahPosNorth", "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosNorth",
+        "ZulrahPosEast", "ZulrahPosCenter"
+      ],
+      "player_tiles": [
+        "SWCornerTile", "SWCornerTile", "SWCornerTile", "EPillar",
+        "EPillarN", "EPillar", "Middle", "EPillar",
+        "EPillar", "SWCornerTile"
+      ],
+      "ticks": [28, 20, 18, 28, 39, 22, 20, 36, 48, 20]
+    },
+    "Phase2": {
+      "types": [2042, 2043, 2044, 2042, 2043, 2044, 2042, 2044, 2042, 2043],
+      "positions": [
+        "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosNorth",
+        "ZulrahPosCenter", "ZulrahPosEast", "ZulrahPosNorth", "ZulrahPosNorth",
+        "ZulrahPosEast", "ZulrahPosCenter"
+      ],
+      "player_tiles": [
+        "SWCornerTile", "SWCornerTile", "SWCornerTile", "EPillar",
+        "EPillar", "EPillar", "WPillar", "WPillarN",
+        "EPillar", "SWCornerTile"
+      ],
+      "ticks": [28, 20, 17, 39, 22, 20, 28, 36, 48, 21]
+    },
+    "Phase3": {
+      "types": [2042, 2042, 2043, 2044, 2042, 2044, 2042, 2042, 2044, 2042, 2044],
+      "positions": [
+        "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosCenter", "ZulrahPosEast",
+        "ZulrahPosNorth", "ZulrahPosWest", "ZulrahPosCenter", "ZulrahPosEast",
+        "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosCenter"
+      ],
+      "player_tiles": [
+        "SWCornerTile", "SWCornerTile", "SECornerTile", "EPillar",
+        "WPillar", "WPillar", "EPillar", "EPillar",
+        "WPillar", "WPillar", "SWCornerTile"
+      ],
+      "ticks": [28, 30, 40, 20, 20, 20, 25, 20, 36, 35, 18]
+    },
+    "Phase4": {
+      "types": [2042, 2044, 2042, 2044, 2043, 2042, 2042, 2044, 2042, 2044, 2042, 2044],
+      "positions": [
+        "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosNorth", "ZulrahPosEast",
+        "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosNorth", "ZulrahPosEast",
+        "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosCenter"
+      ],
+      "player_tiles": [
+        "SWCornerTile", "SWCornerTile", "EPillar", "EPillar",
+        "WPillar", "WPillar", "WPillar", "EPillar",
+        "WPillar", "WPillar", "WPillar", "SWCornerTile"
+      ],
+      "ticks": [28, 36, 24, 30, 28, 17, 34, 33, 20, 27, 29, 18]
+    }
+  },
+  "jad_phase_triggers": [
+    {"rotation": "Phase4", "phase_size": 11, "jad_type": 1},
+    {"rotation": "Phase3", "phase_size": 10, "jad_type": 1},
+    {"rotation": "Phase2", "phase_size": 9, "jad_type": 2},
+    {"rotation": "Phase1", "phase_size": 9, "jad_type": 2}
+  ]
+}
