@@ -5,6 +5,7 @@ import threading
 import time
 import logging
 import numpy as np
+import win32api
 
 # --- OSRS Macro SDK Imports ---
 from src.client_window import RuneLiteClientWindow
