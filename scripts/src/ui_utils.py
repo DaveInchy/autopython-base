@@ -298,8 +298,8 @@ class UIInteraction:
         if not win_rect:
             return None # Indicate that client window was not found
 
-        win_left = win_rect[1]
-        win_top = win_rect[2]
+        win_left = win_rect['left']
+        win_top = win_rect['top']
         win_width = win_rect["w"]
         win_height = win_rect["h"]
 

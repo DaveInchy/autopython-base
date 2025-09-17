@@ -21,31 +21,25 @@ class GameScreen:
 
     # --- Color Detection --- #
 
-    def find_color(self, color: tuple, spectrum_range: list = None) -> tuple:
+    def find_color(self, color: tuple, spectrum_range: list = None, region: tuple = None, size: tuple = None) -> tuple:
         """Find a color on the screen within the specified range."""
         if spectrum_range is None:
             r, g, b = color
             spectrum_range = [r, g, b, r, g, b]
 
-        region = RuneLiteClientWindow().get_rect()
-        x1, y1, x2, y2 = region[0], region[1], region[2], region[3]
-        width, height = region["w"], region["h"]
+        if region is None:
+            client_rect = RuneLiteClientWindow().get_rect()
+            if client_rect:
+                region = (client_rect['left'], client_rect['top'], client_rect['right'], client_rect['bottom'])
+            else:
+                return None # No window found
+        
+        if size is not None:
+            region = (region[0], region[1], region[0] + size[0], region[1] + size[1])
 
-        if region is not None:
-            region = (x1, y1, x2, y2)
-            if size is not None:
-                region = (x1, y1, x1+size[0], y1+size[1])
-                print(f"region: {region}")
-                print(f"size: {size}")
-            if size is None:
-                region = (x1, y1, x2, y2)
-                size = (width, height)
-                print(f"region: {region}")
-                print(f"size: {size}")
-        
         screenshot = ImageGrab.grab(bbox=region)
-        offset_x, offset_y = (region[0], region[1]) if region else (0, 0)
-        
+        offset_x, offset_y = region[0], region[1]
+
         img_array = np.array(screenshot)
         
         matches = np.where(
