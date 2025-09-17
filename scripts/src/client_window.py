@@ -59,14 +59,14 @@ class RuneLiteClientWindow:
 		if not self.hwnd:
 			return None
 		rect = win32gui.GetWindowRect(self.hwnd)
-		# rect: (topleft, topright, bottomright, bottomleft)
+		left, top, right, bottom = rect
 		return {
-			1: rect[0],
-			2: rect[1],
-			3: rect[2],
-            4: rect[3],
-			'w': rect[2] - rect[0],
-			'h': rect[3] - rect[1],
+			'left': left,
+			'top': top,
+			'right': right,
+			'bottom': bottom,
+			'w': right - left,
+			'h': bottom - top,
 		}
 
 	def move(self, x, y):

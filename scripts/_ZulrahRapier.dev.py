@@ -23,6 +23,10 @@ from src.runelite_api import RuneLiteAPI
 from src.hotkeys import HotkeyManager
 from src.osrs_items import OSRSItems
 
+# Add global vars for thread management
+current_equip_stop_event = None
+thread_lock = threading.Lock()
+
 SCRIPT={
     "version": "1.3",
     "title": "ZulrahRapier",
@@ -443,75 +447,48 @@ def get_phase_by_rgb(rgb: tuple[int, int, int]):
                     return "MAGIC"
     return None
 
-def await_phase_confirmation(assumed_phase=str):
+def await_phase_detection(assumed_phase=str, timeout=5, stop_event: threading.Event = None):
     global PHASE_HANDLER
-    confirmed_phase:str|None=None
 
-    def on_click(x, y, pressed):
-        global PHASE_HANDLER
-        global confirmed_phase
+    start_time = time.time()
 
-        if confirmed_phase!=None:
-            return
-        
-        def _get_phase():
-            # print(f"Mouse clicked at ({x}, {y}) with {button}")
-            pixel = pyautogui.pixel(x, y)
-            rgb = [pixel[0], pixel[1], pixel[2]]
-            print(f"detected color: {rgb}")
-
-            def _is_within_range(value, range_min, range_max):
-                return range_min <= value <= range_max
-            
-            def _get_phase_by_rgb(rgb):
-                green = 2042
-                red = 2043
-                blue = 2044
-                for k, v in PHASE_HANDLER._ZULRAH_DATA["types"].items():
-                    color_range = v["rgb"]
-                    for i in range(3):
-                        if _is_within_range(rgb[i], color_range["min"][i], color_range["max"][i]):
-                            phase_id = k
-                            if phase_id == green:
-                                return "RANGE"
-                            if phase_id == red:
-                                return "MELEE"
-                            if phase_id == blue:
-                                return "MAGIC"
-                return None
-            
-            return _get_phase_by_rgb(rgb)
-
-        if pressed:
-            phase = _get_phase();
-            if phase:
-                #@TODO if path is guessed, use that data to fill the 2nd and 3rd parameter
-                PHASE_HANDLER.add_observed_phase(phase == "RANGE" and 2042 or phase == "MELEE" and 2043 or phase == "MAGIC" and 2044, 0, 0)
-                confirmed_phase = phase
+    screen = game_screen.GameScreen()
     
+    detection=None
+    end_loop = False
+    while not end_loop:
+        if stop_event and stop_event.is_set():
+            print("Phase confirmation cancelled.")
+            break
+        if time.time() - start_time > timeout:
+            print(f"Timeout waiting for phase confirmation.")
+            break
 
-    # liste for mouse events
-    listener = mouse.Listener(on_click=on_click)
-    screen: game_screen = game_screen()
-    while confirmed_phase==None:
-        time.sleep(1)
-        # use color_utils to find (use the window surface solely and the rest can be ignored) the first matching color that is within range
-        # 1. loop through each styles rgb ranges stored in the PHASE_HANDLER
+        time.sleep(1.247999999)
+
         phases = PHASE_HANDLER._ZULRAH_DATA["types"].items()
         for i, v in phases:
-            color_ranges = v["rgb"]
-            for range in color_ranges:
-                min = range[0]
-                max = range[1]
-                abs_pos = screen.find_color(color=[1, 2, 3], spectrum=[min[0], min[1], min[2], max[0], max[1], max[2]])
-                print(f"Looking for a color that is for snake style: {(i==2042 and "RANGE" or i==2043 and "MELEE" or i==2044 and "MAGIC" or i not in [2042, 2043, 2044] and v)}")
-                x, y = abs_pos[0], abs_pos[1]
-                if abs_pos is not None:
-                    confirmed_phase=(i==2042 and "RANGE" or i==2043 and "MELEE" or i==2044 and "MAGIC" or i not in [2042, 2043, 2044] and v)
-                    print([confirmed_phase, i, v, phases, phases[i]])
 
-    listener.stop()
-    return confirmed_phase;
+            color_ranges = v["rgb"]
+            for color_range in color_ranges:
+
+                min_vals = color_range["min"]
+                max_vals = color_range["max"]
+
+                print(f"detecting {v['style']} phase")
+                if screen.find_color(color=[1, 2, 3], spectrum_range=[min_vals[0], min_vals[1], min_vals[2], max_vals[0], max_vals[1], max_vals[2]]):
+
+                    print(f" --> SUCCESS: {[v['style'], i]}")
+                    end_loop = True
+                    detection = v["style"]
+                    PHASE_HANDLER.add_observed_phase(i, 0, 0)
+                    break
+            if end_loop:
+                break        
+        if end_loop:
+            break
+
+    return detection
 
 def get_weapon_style_from_slot_one(api: RuneLiteAPI, items_db: OSRSItems) -> str:
     """
@@ -528,13 +505,20 @@ def get_weapon_style_from_slot_one(api: RuneLiteAPI, items_db: OSRSItems) -> str
         return "EMPTY"
 
     item_name = items_db.get_item_name(item_id)
-    if not item_name:
-        return "UNKNOWN"
-
-    item_name = item_name.lower()
-    if "staff" in item_name or "wand" in item_name or "sceptre" in item_name or "trident" in item_name:
+    magic_ids = [12903, 12904, 12905, 27676, 27679] # g.e. manual lookup for toxic staff
+    ranged_ids = [28869]
+    if not item_id in magic_ids and not item_id in ranged_ids:
+        if not item_name:
+            return "UNKNOWN"
+    
+    if item_name:
+        item_name = item_name.lower()
+    else:
+        item_name = "dwarf remains"
+    
+    if "staff" in item_name or "wand" in item_name or "sceptre" in item_name or "trident" in item_name or item_id in magic_ids:
         return "MAGE"
-    if "bow" in item_name or "blowpipe" in item_name or "crossbow" in item_name or "dart" in item_name or "thrownaxe" in item_name or "knife" in item_name:
+    if "bow" in item_name or "blowpipe" in item_name or "crossbow" in item_name or "dart" in item_name or "thrownaxe" in item_name or "knife" in item_name or item_id in ranged_ids:
         return "RANGE"
 
     return "UNKNOWN"
@@ -593,36 +577,6 @@ def search_inventory(name="Shark") -> int | None:
     
     return None
 
-# def qeue_action(action=str, data=any, callback=any):
-#     ACTION_QEUE[len(ACTION_QEUE)+1] = {
-#         "data": data,
-#         "creation": time.time(),
-#         "done": False,
-#         "locked": False,
-#         "code": action,
-#         "message": "success",
-#         "callback": callback
-#     }
-
-# def process_action():
-#     if len(ACTION_QEUE) == 0:
-#         return
-
-#     action = ACTION_QEUE[len(ACTION_QEUE)+1]
-#     if action["locked"]:
-#         return
-#     if action["done"]:
-#         return
-
-#     action["locked"] = True
-#     result = action["callback"](action["data"]) or "success";
-#     action["message"] = f"{result}"
-#     action["done"] = True
-#     action["locked"] = False
-
-def get_current_equipped_combat_style():
-    return "MAGE" # or "RANGE";
-
 def equip_next_gear(humanizer):
     """
     Example function to equip mage gear by clicking specific inventory slots.
@@ -638,14 +592,14 @@ def equip_next_gear(humanizer):
     def get_inventory_slots():
         # based on the setup settings, determine how many slots to use
         len = int(SCRIPT["settings"]["switch_count"])
-        return [1, 2, 5, 6, 9, 10, 13, 14, 17, 18][:len]
+        return [1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21, 22, 25, 26][:len]
     
     for slot in get_inventory_slots():
         humanizer.click_inventory_slot(slot)
     
     enable_user_mouse_input()
 
-def equip_gear(type):
+def equip_gear(type, stop_event: threading.Event = None):
     """
     Equip gear based on the current equipped style.
     """
@@ -695,19 +649,20 @@ def equip_gear(type):
     # move mouse back to original position
     pyautogui.moveTo(original_x, original_y)
 
-    phase=await_phase_confirmation(type)
-    print(f"[SUCCESS] confirmed phase awaited -> {phase}")
-    return phase;
+    phase=await_phase_detection(type, stop_event=stop_event)
+    print(f"Detected Phase: {phase}")
+
+    return
         
 
 def equip_range(stop_event: threading.Event):
-    equip_gear(type="RANGE");
+    equip_gear(type="RANGE", stop_event=stop_event)
 
 def equip_melee(stop_event: threading.Event):
-    equip_gear(type="MELEE");
+    equip_gear(type="MELEE", stop_event=stop_event)
 
 def equip_mage(stop_event: threading.Event):
-    equip_gear(type="MAGE");
+    equip_gear(type="MAGE", stop_event=stop_event)
 
 def update(ui: UIInteraction):
     # process_q()
@@ -749,6 +704,7 @@ def update(ui: UIInteraction):
         print("No prayer data")
     
     phase = PHASE_HANDLER.get_next_zulrah_phase_info()
+    print(phase)
     if phase:
         if phase["error"]:
             print(f"Error: {phase.error}")
@@ -867,39 +823,48 @@ if __name__ == "__main__":
     prompt=True;
     switches=5;
     for k in sys.argv:
-        if "--api_port=" in k:
+        if "--port=" in k:
             v = k.split("=")[1]
             SCRIPT["settings"]["api_port"] = v
-            break
+            continue
         if "--switches=" in k:
             v = k.split("=")[1]
             switches = int(v)
             # set single setting
             SCRIPT["settings"]["switch_count"] = switches
-            break
+            continue
         if k == "-y":
             prompt=False
-            break
+            continue
     
     if prompt==True:
         result = prompt_for_setup();
         if result==False:
             exit(0)
 
+    def equip_wrapper(func, stop_event):
+        global current_equip_stop_event
+        with thread_lock:
+            if current_equip_stop_event:
+                current_equip_stop_event.set()
+            current_equip_stop_event = stop_event
+        
+        if not stop_event.is_set():
+            func(stop_event)
+
     hk = HOTKEY_SWITCH_GEAR_FOR_MAGE
     hotkey_1 = HotkeyManager(hk, f"ctrl+{hk}")
-    hotkey_1.register_hotkeys(equip_mage);
+    hotkey_1.register_hotkeys(lambda stop_event: equip_wrapper(equip_mage, stop_event))
 
     hk = HOTKEY_SWITCH_GEAR_FOR_RANGE
     hotkey_2 = HotkeyManager(hk, f"ctrl+{hk}")
-    hotkey_2.register_hotkeys(equip_range);
+    hotkey_2.register_hotkeys(lambda stop_event: equip_wrapper(equip_range, stop_event))
 
     hk = HOTKEY_SWITCH_GEAR_FOR_MELEE
     hotkey_3 = HotkeyManager(hk, f"ctrl+{hk}")
-    hotkey_3.register_hotkeys(equip_melee);
+    hotkey_3.register_hotkeys(lambda stop_event: equip_wrapper(equip_melee, stop_event))
 
     hotkey_4 = HotkeyManager(HOTKEY_START_FIGHT, f"ctrl+{HOTKEY_START_FIGHT}")
-    hotkey_4.register_hotkeys(enable_combat_mode);
+    hotkey_4.register_hotkeys(enable_combat_mode)
 
     hotkey_1.wait_for_exit()
-    

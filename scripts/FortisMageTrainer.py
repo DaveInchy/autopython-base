@@ -7,7 +7,7 @@ import keyboard  # Use the keyboard library for global hotkeys
 import tkinter as tk
 from tkinter import messagebox
 import os
-from src.color_utils import move_to_color
+from src.game_screen import GameScreen
 from src.xp_tracker import XPTracker
 from src.client_window import RuneLiteClientWindow
 
@@ -39,7 +39,7 @@ def execute_single_sequence():
     rect = client.get_rect()
     # Assume client is right half of 1080p: 960x1080, inventory bottom right above taskbar
     # All coordinates are relative to the client window's top-left
-    x0, y0 = rect[1], rect[2]
+    x0, y0 = rect['left'], rect['top']
     width, height = rect['w'], rect['h']
 
     # Example positions (tune as needed for your layout)
@@ -82,8 +82,9 @@ def execute_single_sequence():
 
     # 7. Try to find and click the guard
     time.sleep(random.uniform(0.1, 0.4))
+    game_screen = GameScreen()
     guard_color = (187,169,117)  # Example color value, replace with actual
-    guard_pos = move_to_color(color=guard_color, spectrum_range=[187, 190, 169, 175, 117, 120])
+    guard_pos = game_screen.move_to_color(color=guard_color, spectrum_range=[187, 190, 169, 175, 117, 120])
     if guard_pos:
         guard_x, guard_y = guard_pos[0], guard_pos[1]
         print(f"Guard found at ({guard_x}, {guard_y}), clicking to snare.")
