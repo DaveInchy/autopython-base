@@ -657,7 +657,7 @@ def equip_melee():
 def equip_mage():
     equip_gear(type="MAGE")
 
-def update(ui: UIInteraction, stop_event: threading.Event):
+def update(ui: UIInteraction, client: RuneLiteClientWindow=None, api: RuneLiteAPI=None, stop_event: threading.Event=None):
     # process_q()
     # get mouse position
     original_x, original_y = pyautogui.position()
@@ -666,15 +666,8 @@ def update(ui: UIInteraction, stop_event: threading.Event):
     MIN_PRAY=10
     
     global PHASE_HANDLER
-
-    # New: Create screen object once for the update cycle
-    screen = game_screen.GameScreen()
-
-    # New: Run phase detection
-    # detect_and_update_phase(ui.client_window, screen)
-
-    api = RuneLiteAPI()
-    health, prayer = api.get_health_points(), api.get_prayer_points()
+    
+    health, prayer = api and (api.get_health_points(), api.get_prayer_points())
 
     if health:
         if health <= MIN_HP:
@@ -702,14 +695,13 @@ def update(ui: UIInteraction, stop_event: threading.Event):
     else:
         print("No prayer data")
     
-    phase = PHASE_HANDLER.get_next_zulrah_phase_info()
-    print(phase)
-    if phase:
-        if phase["error"]:
-            print(f"Error: {phase.error}")
-        else:
-            print(f"Current Rotation: {phase["identified_rotation"]}")
-
+    # phase = PHASE_HANDLER.get_next_zulrah_phase_info()
+    # print(phase)
+    # if phase:
+    #    if phase["error"]:
+    #        print(f"Error: {phase.error}")
+    #    else:
+    #        print(f"Current Rotation: {phase["identified_rotation"]}")
     # if the ticks have gone by, wait for user (not machine) click, use color_utils to then match it with a color spectrum for each boss phase. ase soon as its confirmed. you can then calculate the next phase and add a progress point because of the ticks
     
 
@@ -724,14 +716,15 @@ def enable_combat_mode(stop_event: threading.Event):
         # Start by enabling magic prayer, assuming you press W to start against the green snake, assures youre really ready
         # Reset the state machine to its default for phase 1
         # Start a loop with 0.4 seconds interval, make sure that we have a onGameTick(count=int) method so we can just cycle the start to end with each tich since the rotations themselves are static and run all on programmed timings etc.
-        client = RuneLiteClientWindow()
+        client: RuneLiteClientWindow = RuneLiteClientWindow()
         ui = UIInteraction(HumanizedGridClicker(), None, client)
-        
+        api = RuneLiteAPI()
+
         loop_interval = 0.4 # seconds
         while not stop_event.is_set():
             start_time = time.time()
             
-            update(ui, stop_event)
+            update(ui, client, api, stop_event)
 
             # Wait for the next iteration
             end_time = time.time()
