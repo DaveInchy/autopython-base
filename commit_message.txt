@@ -1,9 +1,3 @@
-docs: Update ui_utils.py demo for comprehensive UI interaction showcase
+fix: Correct ui_utils.py import for demo execution
 
-Refactored the `if __name__ == '__main__':` block in `ui_utils.py` to provide a more interactive and comprehensive demonstration of UI interaction capabilities.
-
-The updated demo:
-- Allows users to choose between image-based and coordinate-based clicking.
-- Showcases interaction with Inventory, Prayer, Magic (Standard and Ancient), and Equipment slots.
-- Clearly indicates the interaction method used for each step.
-- Guides users on creating necessary template images for image recognition.
+Corrected the import statement for `WindowOverlay` in `ui_utils.py` from an absolute to a relative import. This resolves `ModuleNotFoundError` when running `ui_utils.py` as a module within its package structure, enabling proper execution of the demo.
