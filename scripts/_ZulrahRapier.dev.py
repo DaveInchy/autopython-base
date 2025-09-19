@@ -817,7 +817,10 @@ def manual_blood_blitz():
 
     # select blood blitz
     pyautogui.press('F1')
-    ui_interaction.click_magic_slot(SCRIPT["settings"]["manual_spell_slot"], template_filename='magic_blood_blitz.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
+    if SCRIPT["settings"]["manual_spell_book"] == "ancient":
+        ui_interaction.click_magic_ancient_slot(SCRIPT["settings"]["manual_spell_slot"], template_filename='magic_blood_blitz.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
+    else:
+        ui_interaction.click_magic_slot(SCRIPT["settings"]["manual_spell_slot"], template_filename='magic_blood_blitz.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
 
     pyautogui.press('F2')
 

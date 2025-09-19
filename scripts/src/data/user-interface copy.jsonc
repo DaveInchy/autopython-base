@@ -55,5 +55,19 @@
     "coordinate_type": "center",
     "start": { "x": 211, "y": 295 },
     "end": { "x": 53, "y": 79 }
+  },
+  "magic_ancient": {
+    "f_key": "F1",
+    "rows": 7,
+    "columns": 4,
+    "slots": 26,
+    "cellSize": {
+      "width": 32,
+      "height": 32
+    },
+    "layout_mode": "stretched",
+    "coordinate_type": "center",
+    "start": { "x": 211, "y": 295 },
+    "end": { "x": 53, "y": 79 }
   }
 }

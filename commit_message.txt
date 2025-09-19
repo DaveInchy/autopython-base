@@ -1,11 +1,9 @@
-feat: Enhance UI interaction with image recognition and dynamic sizing
+docs: Update ui_utils.py demo for comprehensive UI interaction showcase
 
-This commit introduces significant improvements to UI interaction within the Zulrah script, offering greater flexibility and robustness.
+Refactored the `if __name__ == '__main__':` block in `ui_utils.py` to provide a more interactive and comprehensive demonstration of UI interaction capabilities.
 
-Key changes include:
-- **Hybrid UI Interaction**: Implemented an optional image recognition system for clicking UI elements (inventory, prayer, magic, equipment slots). Users can now toggle between image-based detection and the existing grid-based coordinate system via a new `use_image_recognition` setting.
-- **Dynamic UI Sizing**: Integrated a mechanism to extract UI element dimensions from RuneLite resource packs. These dimensions are used to dynamically update `user-interface.jsonc`, ensuring more accurate grid-based calculations that adapt to different UI scales.
-- **Improved `UIInteraction` Class**: The `UIInteraction` class in `ui_utils.py` was refactored to support both interaction methods, providing a more resilient and adaptable framework.
-- **Dependency Update**: Added `Pillow` and `opencv-python` to `requirements.txt` to support image processing capabilities.
-
-These changes aim to make the script more reliable and adaptable to various RuneLite client configurations, reducing reliance on static, hardcoded coordinates.
+The updated demo:
+- Allows users to choose between image-based and coordinate-based clicking.
+- Showcases interaction with Inventory, Prayer, Magic (Standard and Ancient), and Equipment slots.
+- Clearly indicates the interaction method used for each step.
+- Guides users on creating necessary template images for image recognition.

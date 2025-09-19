@@ -265,7 +265,8 @@ class HumanizedGridClicker:
         self.proficiency = {
             'inventory': 0,
             'prayer': 0,
-            'magic': 0
+            'magic': 0,
+            'magic_ancient': 0
         }
         self.learning_rate = learning_rate
         self.initial_std_dev_factor = initial_std_dev_factor
@@ -443,21 +444,26 @@ if __name__ == '__main__':
     from graphics.window_overlay import WindowOverlay
     from client_window import RuneLiteClientWindow
 
-    print("--- Automated UI Grid Renderer ---")
+    print("--- Automated UI Grid Renderer Demo ---")
     
     client = RuneLiteClientWindow()
     win_rect = client.get_rect()
 
     if not win_rect:
-        print("RuneLite window not found. Exiting.")
+        print("RuneLite window not found. Please open RuneLite and try again. Exiting.")
     else:
         overlay = WindowOverlay(title="GridRenderer", width=win_rect["w"], height=win_rect["h"], x=win_rect[1], y=win_rect[2])
         client.bring_to_foreground()
         time.sleep(0.5)
 
-        # Initialize UIInteraction
         clicker = HumanizedGridClicker()
         ui_interaction = UIInteraction(clicker, overlay, client, templates_dir='src/ui_templates')
+
+        # Prompt for interaction mode
+        use_image_recognition_input = input("Use image recognition for clicks? (y/n): ").lower()
+        use_image_recognition_demo = use_image_recognition_input == 'y'
+
+        print(f"\n--- Demo Mode: {'Image Recognition' if use_image_recognition_demo else 'Coordinate-based'} ---")
 
         # --- Test Inventory ---
         print("Pressing F2, rendering Inventory Grid...")
@@ -465,9 +471,9 @@ if __name__ == '__main__':
         time.sleep(0.5)
         overlay.clear()
         Inventory.render(overlay)
-        overlay.draw_text("Clicking Inventory Slot 5 (image-based)", position=(20, 10), font_size=20, color=(255,255,255))
-        # NOTE: You need to create 'src/ui_templates/inventory_slot_5.png' for this to work
-        ui_interaction.click_inventory_slot(5, template_filename='inventory_slot_5.png', use_image_recognition=True)
+        overlay.draw_text(f"Clicking Inventory Slot 5 ({'image-based' if use_image_recognition_demo else 'coordinate-based'})", position=(20, 10), font_size=20, color=(255,255,255))
+        # NOTE: You need to create 'src/ui_templates/inventory_slot_5.png' for image-based to work
+        ui_interaction.click_inventory_slot(5, template_filename='inventory_slot_5.png', use_image_recognition=use_image_recognition_demo)
         time.sleep(2)
 
         # --- Test Prayer ---
@@ -476,19 +482,31 @@ if __name__ == '__main__':
         time.sleep(0.5)
         overlay.clear()
         Prayer.render(overlay)
-        overlay.draw_text("Clicking Prayer Slot 10 (image-based)", position=(20, 10), font_size=20, color=(255,255,255))
-        # NOTE: You need to create 'src/ui_templates/prayer_slot_10.png' for this to work
-        ui_interaction.click_prayer_slot(10, template_filename='prayer_slot_10.png', use_image_recognition=True)
+        overlay.draw_text(f"Clicking Prayer Slot 10 ({'image-based' if use_image_recognition_demo else 'coordinate-based'})", position=(20, 10), font_size=20, color=(255,255,255))
+        # NOTE: You need to create 'src/ui_templates/prayer_slot_10.png' for image-based to work
+        ui_interaction.click_prayer_slot(10, template_filename='prayer_slot_10.png', use_image_recognition=use_image_recognition_demo)
         time.sleep(2)
 
-        # --- Test Magic ---
-        print("Pressing F1, rendering Magic Grid...")
+        # --- Test Magic (Standard) ---
+        print("Pressing F1, rendering Magic Grid (Standard)...")
         pyautogui.press('f1')
         time.sleep(0.5)
         overlay.clear()
         Magic.render(overlay)
-        overlay.draw_text("Clicking Magic Slot 15 (coordinate-based fallback)", position=(20, 10), font_size=20, color=(255,255,255))
-        ui_interaction.click_magic_slot(15) # Fallback to coordinate-based
+        overlay.draw_text(f"Clicking Magic Slot 15 ({'image-based' if use_image_recognition_demo else 'coordinate-based'})", position=(20, 10), font_size=20, color=(255,255,255))
+        # NOTE: You need to create 'src/ui_templates/magic_slot_15.png' for image-based to work
+        ui_interaction.click_magic_slot(15, template_filename='magic_slot_15.png', use_image_recognition=use_image_recognition_demo)
+        time.sleep(2)
+
+        # --- Test Magic (Ancient) ---
+        print("Pressing F1, rendering Ancient Magic Grid...")
+        pyautogui.press('f1') # Assuming F1 toggles between spellbooks or Ancient is default
+        time.sleep(0.5)
+        overlay.clear()
+        MagicAncient.render(overlay)
+        overlay.draw_text(f"Clicking Ancient Magic Slot 5 ({'image-based' if use_image_recognition_demo else 'coordinate-based'})", position=(20, 10), font_size=20, color=(255,255,255))
+        # NOTE: You need to create 'src/ui_templates/magic_ancient_slot_5.png' for image-based to work
+        ui_interaction.click_magic_ancient_slot(5, template_filename='magic_ancient_slot_5.png', use_image_recognition=use_image_recognition_demo)
         time.sleep(2)
 
         # --- Test Equipment ---
@@ -496,10 +514,9 @@ if __name__ == '__main__':
         pyautogui.press('f3')
         time.sleep(0.5)
         overlay.clear()
-        # Equipment doesn't have a render method for the whole grid, so we just click
-        overlay.draw_text("Clicking Equipment Helm (image-based)", position=(20, 10), font_size=20, color=(255,255,255))
-        # NOTE: You need to create 'src/ui_templates/equipment_helm.png' for this to work
-        ui_interaction.click_equipment_slot('helm', template_filename='equipment_helm.png', use_image_recognition=True)
+        overlay.draw_text(f"Clicking Equipment Helm ({'image-based' if use_image_recognition_demo else 'coordinate-based'})", position=(20, 10), font_size=20, color=(255,255,255))
+        # NOTE: You need to create 'src/ui_templates/equipment_helm.png' for image-based to work
+        ui_interaction.click_equipment_slot('helm', template_filename='equipment_helm.png', use_image_recognition=use_image_recognition_demo)
         time.sleep(2)
 
         # --- Continuous Update Loop for Highlights ---

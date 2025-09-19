@@ -46,7 +46,7 @@ plate for and never actually finished. this way we both know where we still will
 even fill those "empty" code blocks with lovin and code.
 
 ## 3: Protocols and Workflow
-@TOWRITE
+@TOWRITTEN
 ### Planning
 
 ### Execution
@@ -64,16 +64,47 @@ even fill those "empty" code blocks with lovin and code.
    This feature provides a data-driven system for mapping and rendering in-game UI
      elements, such as inventory, prayer, and magic spellbook grids. Coordinates and
      grid properties are defined in `scripts/src/data/user-interface.jsonc`.
-   
+     The `cellSize` properties for these grids are now dynamically updated based on
+     extracted dimensions from RuneLite resource packs, ensuring accuracy across
+     different UI scales.
+
    - **`scripts/src/ui_utils.py`**: Contains the core logic for calculating slot
      coordinates based on `packed` or `stretched` layout modes, and includes rendering
-     capabilities for visual debugging.
+     capabilities for visual debugging. It now also supports optional image-based
+     UI element detection.
    - **`scripts/src/graphics/window_overlay.py`**: Provides the overlay
      functionality used for rendering the grids.
    - **`scripts/CoordinateMapper.py`**: A utility script to help record relative
      mouse coordinates for mapping UI elements.
+   - **`scripts/extract_ui_dimensions.py`**: A new utility script to extract UI
+     element dimensions from RuneLite resource packs and update `user-interface.jsonc`.
 
    To test the grid rendering, run `python.exe scripts/src/ui_utils.py`.
+
+### Hybrid UI Interaction
+   This concept describes the flexible approach to interacting with RuneScape's UI,
+   combining the reliability of grid-based coordinate calculations with the adaptability
+   of image recognition.
+
+   - **Grid-based Interaction**: Relies on predefined grid properties and dynamically
+     calculated coordinates (now enhanced with dimensions extracted from resource packs)
+     to click on UI elements. This method is precise when UI scaling is consistent.
+   - **Image Recognition-based Interaction**: Uses template images to locate UI elements
+     on the screen, providing resilience against minor UI layout changes or dynamic
+     element positions. This method is optional and can be toggled via the
+     `use_image_recognition` setting in the script.
+   - **Fallback Mechanism**: When image recognition is enabled but fails to find a
+     template, the system gracefully falls back to the grid-based coordinate calculation,
+     ensuring continued functionality.
+
+#### Ancient Magic Spellbook Grid
+   This specific implementation extends the Hybrid UI Interaction to support the
+   Ancient Magic spellbook. It leverages the `magic_ancient` grid definition in
+   `scripts/src/data/user-interface.jsonc` and provides a dedicated method
+   (`click_magic_ancient_slot`) for interacting with Ancient spells. The script
+   (`_ZulrahRapier.dev.py`) now dynamically switches between standard and Ancient
+   magic spellbooks based on user settings.
+
 ## Feature Index (`/scripts`)
 
 *   **`AIO_Main.py`**: A break manager for running scripts in a loop with breaks.
@@ -133,9 +164,7 @@ even fill those "empty" code blocks with lovin and code.
 
    * **Scoped & Efficient Hotkeys**:
        * The entire hotkey system was overhauled to improve efficiency and control.
-       * Replaced an inefficient multi-`HotkeyManager` implementation with a single manager for the main combat loop.
-       * Action hotkeys (`q`, `w`, `e`, `r`) are now registered directly via the `keyboard` library and are "scoped" to only function when the combat loop is active (`combat_mode_active == True`).
-       * This change significantly simplified the threading model and resolved potential thread-related issues.
+       * Replaced an inefficient multi-`HotkeyManager` implementation with a single manager for the main loop and direct registration for action keys, simplifying the threading model.
 
    * **Synchronized Combat Loop**:
        * The main combat loop was updated to run at a consistent 0.4-second interval by accounting for the execution time of the loop's body, leading to more predictable behavior.
