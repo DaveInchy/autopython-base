@@ -119,6 +119,31 @@ even fill those "empty" code blocks with lovin and code.
 2. Write (to-be) common issues down in `GEMINI.md` to make sure next time we already know the solution. and issues that are hard to figure out initially will then maybe become easily resolveable. common issues are the issues that are going to be happening because of a faulthy installation, like nodejs not willing to work. or if we need privilages or when you cant run the project or the current instructions dont resolve etc etc.
 3. **Python Imports:** Use relative imports for modules within the same package. For example, if `a.py` and `b.py` are in the same `src` folder, `a.py` should import `b` with `from .b import ...`, not `import b` or `import src.b`. This is especially important when a directory contains an `__init__.py` file, making it a package. Ensure all internal imports within a package are relative to avoid `ModuleNotFoundError`.
 
+# Previous Session Summary: Zulrah Script Refactoring & Enhancement
+
+  This session focused on a major refactoring of the `_ZulrahRapier.dev.py` script to improve its robustness, efficiency, and feature set.
+
+  Key Features & Improvements:
+
+   * **Refactored Phase Tracking**:
+       * Decoupled phase detection from hotkeys and integrated it into the main combat loop for continuous, synchronous operation.
+       * Replaced the inefficient, threaded `await_phase_detection` with a more robust, score-based color detection system.
+       * The new system calculates a confidence score (0-100%) for each phase, making it more resilient to false positives from other on-screen elements.
+       * The phase detection call was subsequently commented out (`archived`) at user request to improve performance for other tasks.
+
+   * **Scoped & Efficient Hotkeys**:
+       * The entire hotkey system was overhauled to improve efficiency and control.
+       * Replaced an inefficient multi-`HotkeyManager` implementation with a single manager for the main combat loop.
+       * Action hotkeys (`q`, `w`, `e`, `r`) are now registered directly via the `keyboard` library and are "scoped" to only function when the combat loop is active (`combat_mode_active == True`).
+       * This change significantly simplified the threading model and resolved potential thread-related issues.
+
+   * **Synchronized Combat Loop**:
+       * The main combat loop was updated to run at a consistent 0.4-second interval by accounting for the execution time of the loop's body, leading to more predictable behavior.
+
+   * **Bug Fixing**:
+       * Resolved a `TypeError` in the `GameScreen.find_color()` call by providing a required dummy argument.
+       * Fixed a `TypeError` in the hotkey callback system by correctly handling arguments passed by the `HotkeyManager`.
+
 # Previous Session Summary: UI Automation & Macro Development
 
   This session focused on building a robust UI automation framework for the OSRS client,
