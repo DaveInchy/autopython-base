@@ -1,3 +1,3 @@
-fix: Correct ui_utils.py client_window import
+fix: Resolve KeyError in ui_utils.py demo
 
-Corrected the import statement for `RuneLiteClientWindow` in `ui_utils.py` from an absolute to a relative import. This resolves `ModuleNotFoundError` when running `ui_utils.py` as a module within its package structure, enabling proper execution of the demo.
+Corrected dictionary key access for `win_rect` in `ui_utils.py` demo. Changed `win_rect[1]` and `win_rect[2]` to `win_rect['left']` and `win_rect['top']` respectively, resolving the `KeyError` when initializing `WindowOverlay`.

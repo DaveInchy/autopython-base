@@ -452,7 +452,7 @@ if __name__ == '__main__':
     if not win_rect:
         print("RuneLite window not found. Please open RuneLite and try again. Exiting.")
     else:
-        overlay = WindowOverlay(title="GridRenderer", width=win_rect["w"], height=win_rect["h"], x=win_rect[1], y=win_rect[2])
+        overlay = WindowOverlay(title="GridRenderer", width=win_rect["w"], height=win_rect["h"], x=win_rect['left'], y=win_rect['top'])
         client.bring_to_foreground()
         time.sleep(0.5)
 
