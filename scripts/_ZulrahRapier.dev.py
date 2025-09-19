@@ -785,6 +785,33 @@ def on_low_prayer(ui):
 
 # @TODO: Save and Load Settings
 
+def manual_blood_blitz(stop_event: threading.Event):
+    """
+    Manually trigger blood blitz.
+    """
+    # get current mouse position
+    original_x, original_y = pyautogui.position()
+
+    client = RuneLiteClientWindow()
+    client.bring_to_foreground()
+
+    _static_local_position_from_bottomright_in_runelite_window = [193, 146]
+    x1, y1, x2, y2, w, h = client.get_rect()
+    
+    abs_x = x1+w-_static_local_position_from_bottomright_in_runelite_window[0]
+    abs_y = y1+h-_static_local_position_from_bottomright_in_runelite_window[1]
+
+    # select blood blitz
+    pyautogui.press('F2')
+    
+    # move mouse to blood blitz
+    pyautogui.click(abs_x, abs_y)
+
+    pyautogui.press('F2')
+
+    # move mouse back to original position
+    pyautogui.moveTo(original_x, original_y)
+
 if __name__ == "__main__":
 
     # hotkey_manager = HotkeyManager(HOTKEY_START_LOOP, HOTKEY_STOP_LOOP)
@@ -866,5 +893,9 @@ if __name__ == "__main__":
 
     hotkey_4 = HotkeyManager(HOTKEY_START_FIGHT, f"ctrl+{HOTKEY_START_FIGHT}")
     hotkey_4.register_hotkeys(enable_combat_mode)
+
+    hk = "r"
+    hotkey_5 = HotkeyManager(hk, f"ctrl+{hk}")
+    hotkey_5.register_hotkeys(manual_blood_blitz)
 
     hotkey_1.wait_for_exit()
