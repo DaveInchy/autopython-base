@@ -1,3 +1,4 @@
+from typing import Literal
 import win32gui
 import win32con
 import win32api
@@ -55,7 +56,14 @@ class RuneLiteClientWindow:
 		win32gui.EnumWindows(enum_handler, found)
 		return found[0] if found else None
 
-	def get_rect(self):
+	def get_rect(self) -> Literal[
+			'left',
+			'top',
+			'right',
+			'bottom',
+			'w',
+			'h',
+	]:
 		if not self.hwnd:
 			return None
 		rect = win32gui.GetWindowRect(self.hwnd)

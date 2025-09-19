@@ -167,10 +167,11 @@ def DrawCursorPosition(overlay: WindowOverlay, stop_event: threading.Event, colo
         # Get absolute cursor position
         cursor_x, cursor_y = win32api.GetCursorPos()
         # Get client window position and size
-        win_rect = client_window.get_rect()  # (left, top, right, bottom)
-        win_left, win_top, win_right, win_bottom = win_rect[1], win_rect[2], win_rect[3], win_rect[4]
-        win_width = win_rect["w"]
-        win_height = win_rect["h"]
+        win_rect = client_window.get_rect()
+        if not win_rect:
+            time.sleep(0.1)
+            continue
+        win_left, win_top, win_width, win_height = win_rect['left'], win_rect['top'], win_rect['w'], win_rect['h']
 
         # Calculate cursor position relative to the client window (origin at bottom-right)
         rel_x = (cursor_x - win_left)

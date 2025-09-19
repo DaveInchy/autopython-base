@@ -20,7 +20,7 @@ if __name__ == "__main__":
             if not win_rect:
                 return
 
-            win_left, win_top = win_rect[1], win_rect[2]
+            win_left, win_top = win_rect['left'], win_rect['top']
             win_width, win_height = win_rect["w"], win_rect["h"]
 
             rel_x = cursor_x - win_left
@@ -38,7 +38,7 @@ if __name__ == "__main__":
         # Create the overlay and run the drawing function in the main thread
         win_rect = client.get_rect()
         if win_rect:
-            overlay = WindowOverlay(title="CoordinateMapper", width=win_rect["w"], height=win_rect["h"], x=win_rect[1], y=win_rect[2])
+            overlay = WindowOverlay(title="CoordinateMapper", width=win_rect["w"], height=win_rect["h"], x=win_rect['left'], y=win_rect['top'])
             DrawCursorPosition(overlay, stop_event)
         else:
             print("RuneLite window not found. Exiting.")
