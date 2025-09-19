@@ -13,6 +13,7 @@ import sys
 # pip packages/module
 import pyautogui # type: ignore
 from pynput import mouse  # type: ignore # Add this line
+import keyboard # For scoped hotkeys
 
 # --- OSRS Macro SDK Imports ---
 from src import game_screen
@@ -23,9 +24,8 @@ from src.runelite_api import RuneLiteAPI
 from src.hotkeys import HotkeyManager
 from src.osrs_items import OSRSItems
 
-# Add global vars for thread management
-current_equip_stop_event = None
-thread_lock = threading.Lock()
+
+combat_mode_active = False
 
 SCRIPT={
     "version": "1.3",
@@ -72,6 +72,9 @@ SCRIPT={
         "use_jad_indicator": True,
         "use_performance_mode": True,
         "mode": "hotkeys",
+        "manual_spell_slot": 1,
+        "manual_spell_book": "ancient",
+        "render_grids_and_clicks": False,
     },
     "setup": [
         {
@@ -426,69 +429,62 @@ global CURRENT_EQUIPPED_STYLE
 # global ACTION_QEUE
 # ACTION_QEUE=[]
 
-def is_within_range(value, range_min, range_max):
-    return range_min <= value <= range_max
 
-def get_phase_by_rgb(rgb: tuple[int, int, int]):
-    global PHASE_HANDLER
-    green = 2042
-    red = 2043
-    blue = 2044
-    for k, v in PHASE_HANDLER._ZULRAH_DATA["types"].items():
-        color_range = v["rgb"]
-        for i in range(3):
-            if is_within_range(rgb[i], color_range["min"][i], color_range["max"][i]):
-                phase_id = k
-                if phase_id == green:
-                    return "RANGE"
-                if phase_id == red:
-                    return "MELEE"
-                if phase_id == blue:
-                    return "MAGIC"
-    return None
 
-def await_phase_detection(assumed_phase=str, timeout=5, stop_event: threading.Event = None):
+def detect_and_update_phase(client: RuneLiteClientWindow, screen: game_screen.GameScreen):
+    """
+    Detects the current Zulrah phase by searching for its colors in the full client window
+    and calculating a confidence score for each phase.
+    """
     global PHASE_HANDLER
 
-    start_time = time.time()
+    client_rect = client.get_rect()
+    if not client_rect:
+        print("Client window not found.")
+        return
 
-    screen = game_screen.GameScreen()
-    
-    detection=None
-    end_loop = False
-    while not end_loop:
-        if stop_event and stop_event.is_set():
-            print("Phase confirmation cancelled.")
-            break
-        if time.time() - start_time > timeout:
-            print(f"Timeout waiting for phase confirmation.")
-            break
+    full_window_region = (
+        client_rect['left'],
+        client_rect['top'],
+        client_rect['right'],
+        client_rect['bottom']
+    )
 
-        time.sleep(1.247999999)
+    phase_scores = {}
 
-        phases = PHASE_HANDLER._ZULRAH_DATA["types"].items()
-        for i, v in phases:
+    # Iterate over each type of Zulrah (color)
+    for npc_id, type_data in PHASE_HANDLER._ZULRAH_DATA["types"].items():
+        match_count = 0
+        total_ranges = len(type_data["rgb"])
 
-            color_ranges = v["rgb"]
-            for color_range in color_ranges:
+        # Check how many of the color ranges for this phase are found
+        for color_range in type_data["rgb"]:
+            min_vals = color_range["min"]
+            max_vals = color_range["max"]
+            
+            if screen.find_color(color=(0,0,0), spectrum_range=[min_vals[0], min_vals[1], min_vals[2], max_vals[0], max_vals[1], max_vals[2]], region=full_window_region):
+                match_count += 1
+        
+        # Calculate confidence score
+        score = (match_count / total_ranges) * 100 if total_ranges > 0 else 0
+        phase_scores[type_data['name']] = score
 
-                min_vals = color_range["min"]
-                max_vals = color_range["max"]
+    # Find the phase with the highest score
+    if not phase_scores:
+        return
 
-                print(f"detecting {v['style']} phase")
-                if screen.find_color(color=[1, 2, 3], spectrum_range=[min_vals[0], min_vals[1], min_vals[2], max_vals[0], max_vals[1], max_vals[2]]):
+    best_phase_name = max(phase_scores, key=phase_scores.get)
+    best_score = phase_scores[best_phase_name]
 
-                    print(f" --> SUCCESS: {[v['style'], i]}")
-                    end_loop = True
-                    detection = v["style"]
-                    PHASE_HANDLER.add_observed_phase(i, 0, 0)
-                    break
-            if end_loop:
-                break        
-        if end_loop:
-            break
+    # Confidence threshold to consider a detection valid
+    DETECTION_THRESHOLD = 50.0
 
-    return detection
+    if best_score >= DETECTION_THRESHOLD:
+        print(f"Phase Detected: {best_phase_name} (Confidence: {best_score:.2f}%)")
+        # Position is unknown, so we cannot update the rotation manager yet.
+    else:
+        # This is useful for debugging color ranges
+        print(f"No phase detected above {DETECTION_THRESHOLD}%. Best guess: {best_phase_name} ({best_score:.2f}%)")
 
 def get_weapon_style_from_slot_one(api: RuneLiteAPI, items_db: OSRSItems) -> str:
     """
@@ -599,7 +595,7 @@ def equip_next_gear(humanizer):
     
     enable_user_mouse_input()
 
-def equip_gear(type, stop_event: threading.Event = None):
+def equip_gear(type):
     """
     Equip gear based on the current equipped style.
     """
@@ -649,22 +645,19 @@ def equip_gear(type, stop_event: threading.Event = None):
     # move mouse back to original position
     pyautogui.moveTo(original_x, original_y)
 
-    phase=await_phase_detection(type, stop_event=stop_event)
-    print(f"Detected Phase: {phase}")
-
     return
         
 
-def equip_range(stop_event: threading.Event):
-    equip_gear(type="RANGE", stop_event=stop_event)
+def equip_range():
+    equip_gear(type="RANGE")
 
-def equip_melee(stop_event: threading.Event):
-    equip_gear(type="MELEE", stop_event=stop_event)
+def equip_melee():
+    equip_gear(type="MELEE")
 
-def equip_mage(stop_event: threading.Event):
-    equip_gear(type="MAGE", stop_event=stop_event)
+def equip_mage():
+    equip_gear(type="MAGE")
 
-def update(ui: UIInteraction):
+def update(ui: UIInteraction, stop_event: threading.Event):
     # process_q()
     # get mouse position
     original_x, original_y = pyautogui.position()
@@ -673,6 +666,12 @@ def update(ui: UIInteraction):
     MIN_PRAY=10
     
     global PHASE_HANDLER
+
+    # New: Create screen object once for the update cycle
+    screen = game_screen.GameScreen()
+
+    # New: Run phase detection
+    # detect_and_update_phase(ui.client_window, screen)
 
     api = RuneLiteAPI()
     health, prayer = api.get_health_points(), api.get_prayer_points()
@@ -683,7 +682,7 @@ def update(ui: UIInteraction):
             disable_user_mouse_input()
             ui.client_window.bring_to_foreground()
             pyautogui.press('F2')
-            on_low_health(ui)
+            on_low_health(ui, stop_event)
             pyautogui.moveTo(original_x, original_y)
     
             enable_user_mouse_input()
@@ -715,18 +714,34 @@ def update(ui: UIInteraction):
     
 
 def enable_combat_mode(stop_event: threading.Event):
-    # Start by enabling magic prayer, assuming you press W to start against the green snake, assures youre really ready
-    # Reset the state machine to its default for phase 1
-    # Start a loop with 0.4 seconds interval, make sure that we have a onGameTick(count=int) method so we can just cycle the start to end with each tich since the rotations themselves are static and run all on programmed timings etc.
-    client = RuneLiteClientWindow()
-    ui = UIInteraction(HumanizedGridClicker(), None, client)
+    global combat_mode_active
+    if combat_mode_active:
+        return  # Already running
+    combat_mode_active = True
+    print("Combat mode enabled. Gear/prayer hotkeys are active.")
     
-    while not stop_event.is_set():
+    try:
+        # Start by enabling magic prayer, assuming you press W to start against the green snake, assures youre really ready
+        # Reset the state machine to its default for phase 1
+        # Start a loop with 0.4 seconds interval, make sure that we have a onGameTick(count=int) method so we can just cycle the start to end with each tich since the rotations themselves are static and run all on programmed timings etc.
+        client = RuneLiteClientWindow()
+        ui = UIInteraction(HumanizedGridClicker(), None, client)
         
-        update(ui)
+        loop_interval = 0.4 # seconds
+        while not stop_event.is_set():
+            start_time = time.time()
+            
+            update(ui, stop_event)
 
-        # Wait for the next iteration
-        time.sleep(0.1)
+            # Wait for the next iteration
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            sleep_time = loop_interval - elapsed_time
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+    finally:
+        combat_mode_active = False
+        print("Combat mode disabled. Gear/prayer hotkeys are inactive.")
         
 
 def on_same_health(time=5000):
@@ -735,7 +750,7 @@ def on_same_health(time=5000):
 def on_death():
     pass
 
-def on_low_health(ui: UIInteraction):
+def on_low_health(ui: UIInteraction, stop_event: threading.Event):
 
     def consume_food():
         food_ated=0
@@ -766,6 +781,8 @@ def on_low_health(ui: UIInteraction):
         if teleport:
             print(f"Found teleport in slot {teleport}")
             ui.click_inventory_slot(teleport)
+            print("Panic teleporting and stopping combat loop.")
+            stop_event.set()
             return True
 
 def on_low_prayer(ui):
@@ -785,10 +802,14 @@ def on_low_prayer(ui):
 
 # @TODO: Save and Load Settings
 
-def manual_blood_blitz(stop_event: threading.Event):
+def manual_blood_blitz():
     """
     Manually trigger blood blitz.
     """
+    global combat_mode_active
+    if not combat_mode_active:
+        return
+
     # get current mouse position
     original_x, original_y = pyautogui.position()
 
@@ -796,13 +817,21 @@ def manual_blood_blitz(stop_event: threading.Event):
     client.bring_to_foreground()
 
     _static_local_position_from_bottomright_in_runelite_window = [193, 146]
-    x1, y1, x2, y2, w, h = client.get_rect()
+    win_rect = client.get_rect()
+    if not win_rect:
+        print("RuneLite window not found, cannot cast.")
+        return
     
-    abs_x = x1+w-_static_local_position_from_bottomright_in_runelite_window[0]
-    abs_y = y1+h-_static_local_position_from_bottomright_in_runelite_window[1]
+    x1 = win_rect['left']
+    y1 = win_rect['top']
+    w = win_rect['w']
+    h = win_rect['h']
+    
+    abs_x = x1 + w - _static_local_position_from_bottomright_in_runelite_window[0]
+    abs_y = y1 + h - _static_local_position_from_bottomright_in_runelite_window[1]
 
     # select blood blitz
-    pyautogui.press('F2')
+    pyautogui.press('F1')
     
     # move mouse to blood blitz
     pyautogui.click(abs_x, abs_y)
@@ -811,6 +840,8 @@ def manual_blood_blitz(stop_event: threading.Event):
 
     # move mouse back to original position
     pyautogui.moveTo(original_x, original_y)
+    time.sleep(0.025)
+    pyautogui.click(original_x, original_y)
 
 if __name__ == "__main__":
 
@@ -839,6 +870,24 @@ if __name__ == "__main__":
                 SCRIPT["settings"][setup["setting"]] = setup["options"][choice]
 
             print(50*"=")
+            # Manual Spell Slot
+            choice = input(f"Enter manual spell slot (default: {SCRIPT['settings']['manual_spell_slot']}): ")
+            if choice.isdigit():
+                SCRIPT["settings"]["manual_spell_slot"] = int(choice)
+            
+            print(50*"=")
+            # Manual Spell Book
+            choice = input(f"Enter manual spell book (ancient/standard) (default: {SCRIPT['settings']['manual_spell_book']}): ")
+            if choice in ["ancient", "standard"]:
+                SCRIPT["settings"]["manual_spell_book"] = choice
+
+            print(50*"=")
+            # Render Grids and Clicks
+            choice = input(f"Render debug grids and clicks (true/false) (default: {SCRIPT['settings']['render_grids_and_clicks']}): ")
+            if choice.lower() in ["true", "false"]:
+                SCRIPT["settings"]["render_grids_and_clicks"] = choice.lower() == "true"
+
+            print(50*"=")
             print("Configuration Done!")
             return True
 
@@ -863,39 +912,54 @@ if __name__ == "__main__":
         if k == "-y":
             prompt=False
             continue
+        if "--manual-spell-slot=" in k:
+            v = k.split("=")[1]
+            SCRIPT["settings"]["manual_spell_slot"] = int(v)
+            continue
+        if "--manual-spell-book=" in k:
+            v = k.split("=")[1]
+            SCRIPT["settings"]["manual_spell_book"] = v
+            continue
+        if "--render-grids-and-clicks=" in k:
+            v = k.split("=")[1]
+            SCRIPT["settings"]["render_grids_and_clicks"] = v.lower() == "true"
+            continue
     
     if prompt==True:
         result = prompt_for_setup();
         if result==False:
             exit(0)
 
-    def equip_wrapper(func, stop_event):
-        global current_equip_stop_event
-        with thread_lock:
-            if current_equip_stop_event:
-                current_equip_stop_event.set()
-            current_equip_stop_event = stop_event
-        
-        if not stop_event.is_set():
-            func(stop_event)
+    # --- Hotkey Registration ---
 
-    hk = HOTKEY_SWITCH_GEAR_FOR_MAGE
-    hotkey_1 = HotkeyManager(hk, f"ctrl+{hk}")
-    hotkey_1.register_hotkeys(lambda stop_event: equip_wrapper(equip_mage, stop_event))
+    # Scoped action hotkeys. They only work if combat_mode_active is True.
+    def scoped_equip_mage():
+        if combat_mode_active:
+            equip_mage()
 
-    hk = HOTKEY_SWITCH_GEAR_FOR_RANGE
-    hotkey_2 = HotkeyManager(hk, f"ctrl+{hk}")
-    hotkey_2.register_hotkeys(lambda stop_event: equip_wrapper(equip_range, stop_event))
+    def scoped_equip_range():
+        if combat_mode_active:
+            equip_range()
 
-    hk = HOTKEY_SWITCH_GEAR_FOR_MELEE
-    hotkey_3 = HotkeyManager(hk, f"ctrl+{hk}")
-    hotkey_3.register_hotkeys(lambda stop_event: equip_wrapper(equip_melee, stop_event))
+    def scoped_equip_melee():
+        if combat_mode_active:
+            equip_melee()
+            
+    def scoped_manual_blood_blitz():
+        if combat_mode_active:
+            manual_blood_blitz()
 
-    hotkey_4 = HotkeyManager(HOTKEY_START_FIGHT, f"ctrl+{HOTKEY_START_FIGHT}")
-    hotkey_4.register_hotkeys(enable_combat_mode)
+    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_MAGE, scoped_equip_mage)
+    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_RANGE, scoped_equip_range)
+    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_MELEE, scoped_equip_melee)
+    keyboard.add_hotkey("r", scoped_manual_blood_blitz)
 
-    hk = "r"
-    hotkey_5 = HotkeyManager(hk, f"ctrl+{hk}")
-    hotkey_5.register_hotkeys(manual_blood_blitz)
+    print(f"Action hotkeys ('{HOTKEY_SWITCH_GEAR_FOR_MAGE}', '{HOTKEY_SWITCH_GEAR_FOR_RANGE}', '{HOTKEY_SWITCH_GEAR_FOR_MELEE}', 'r') are registered.")
+    print("They will only function when combat mode is active.")
 
-    hotkey_1.wait_for_exit()
+    # Main combat loop manager
+    combat_loop_manager = HotkeyManager(HOTKEY_START_FIGHT, f"ctrl+{HOTKEY_START_FIGHT}")
+    combat_loop_manager.register_hotkeys(enable_combat_mode)
+
+    # Keep the script running until Ctrl+C is pressed
+    combat_loop_manager.wait_for_exit()
