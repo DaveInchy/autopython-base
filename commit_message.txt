@@ -1,3 +1,3 @@
-fix: Correct ui_utils.py import for demo execution
+fix: Correct ui_utils.py client_window import
 
-Corrected the import statement for `WindowOverlay` in `ui_utils.py` from an absolute to a relative import. This resolves `ModuleNotFoundError` when running `ui_utils.py` as a module within its package structure, enabling proper execution of the demo.
+Corrected the import statement for `RuneLiteClientWindow` in `ui_utils.py` from an absolute to a relative import. This resolves `ModuleNotFoundError` when running `ui_utils.py` as a module within its package structure, enabling proper execution of the demo.

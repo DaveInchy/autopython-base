@@ -8,7 +8,7 @@ import numpy as np
 import win32api
 
 # --- OSRS Macro SDK Imports ---
-from src.client_window import RuneLiteClientWindow
+from ..client_window import RuneLiteClientWindow
 
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s, %(message)s')

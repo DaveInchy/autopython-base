@@ -442,7 +442,7 @@ class UIInteraction:
 if __name__ == '__main__':
     import time
     from .graphics.window_overlay import WindowOverlay
-    from client_window import RuneLiteClientWindow
+    from .client_window import RuneLiteClientWindow
 
     print("--- Automated UI Grid Renderer Demo ---")
     
