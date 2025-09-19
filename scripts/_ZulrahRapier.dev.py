@@ -71,6 +71,7 @@ SCRIPT={
         "use_phase_counter": True,
         "use_jad_indicator": True,
         "use_performance_mode": True,
+        "use_image_recognition": False,
         "mode": "hotkeys",
         "manual_spell_slot": 1,
         "manual_spell_book": "ancient",
@@ -616,21 +617,21 @@ def equip_gear(type):
     # select a prayer based on the type
     if type == "MAGE":
         pyautogui.press('F4')
-        ui_interaction.click_prayer_slot(17)
+        ui_interaction.click_prayer_slot(17, template_filename='prayer_protect_from_magic.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
         if CURRENT_EQUIPPED_STYLE == "MAGE":
             equip_next_gear(ui_interaction)
             pyautogui.press('F4')
-            ui_interaction.click_prayer_slot(20)
+            ui_interaction.click_prayer_slot(20, template_filename='prayer_augury.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
         # pyautogui.press('F4')  # Stay on prayer book for prayer switches
         pyautogui.press('F2')  # Close Prayers into Inventory
 
     elif type == "RANGE":
         pyautogui.press('F4')
-        ui_interaction.click_prayer_slot(18)
+        ui_interaction.click_prayer_slot(18, template_filename='prayer_protect_from_missiles.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
         if CURRENT_EQUIPPED_STYLE == "RANGE":
             equip_next_gear(ui_interaction)
             pyautogui.press('F4')
-            ui_interaction.click_prayer_slot(21)
+            ui_interaction.click_prayer_slot(21, template_filename='prayer_rigour.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
         pyautogui.press('F2')  # Close Prayers into Inventory
 
     elif type == "MELEE":
@@ -639,7 +640,7 @@ def equip_gear(type):
         if CURRENT_EQUIPPED_STYLE == "MAGE":
             equip_next_gear(ui_interaction)
             pyautogui.press('F4')
-            ui_interaction.click_prayer_slot(20)
+            ui_interaction.click_prayer_slot(20, template_filename='prayer_piety.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
         pyautogui.press('F2')  # Close Prayers into Inventory
     
     # move mouse back to original position
@@ -717,8 +718,10 @@ def enable_combat_mode(stop_event: threading.Event):
         # Reset the state machine to its default for phase 1
         # Start a loop with 0.4 seconds interval, make sure that we have a onGameTick(count=int) method so we can just cycle the start to end with each tich since the rotations themselves are static and run all on programmed timings etc.
         client: RuneLiteClientWindow = RuneLiteClientWindow()
-        ui = UIInteraction(HumanizedGridClicker(), None, client)
+        ui = UIInteraction(HumanizedGridClicker(), None, client, templates_dir='src/ui_templates')
         api = RuneLiteAPI()
+
+        use_image_recognition = SCRIPT["settings"]["use_image_recognition"]
 
         loop_interval = 0.4 # seconds
         while not stop_event.is_set():
@@ -752,13 +755,13 @@ def on_low_health(ui: UIInteraction, stop_event: threading.Event):
         primary = search_inventory("shark")
         if primary:
             print(f"Found food in slot {primary}")
-            ui.click_inventory_slot(primary)
+            ui.click_inventory_slot(primary, template_filename='inventory_shark.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
             food_ated+=1
         
         combo_food = search_inventory("karambwan")
         if combo_food:
             print(f"Found combo food in slot {combo_food}")
-            ui.click_inventory_slot(combo_food)
+            ui.click_inventory_slot(combo_food, template_filename='inventory_karambwan.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
             food_ated+=1
 
         if food_ated==0:
@@ -773,7 +776,7 @@ def on_low_health(ui: UIInteraction, stop_event: threading.Event):
         teleport = search_inventory("teleport")
         if teleport:
             print(f"Found teleport in slot {teleport}")
-            ui.click_inventory_slot(teleport)
+            ui.click_inventory_slot(teleport, template_filename='inventory_teleport.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
             print("Panic teleporting and stopping combat loop.")
             stop_event.set()
             return True
@@ -785,7 +788,8 @@ def on_low_prayer(ui):
         potion = search_inventory("prayer") or search_inventory("restore")
         if potion:
             print(f"Found potion in slot {potion}")
-            ui.click_inventory_slot(potion)
+            # Using a generic template name for prayer/restore potions
+            ui.click_inventory_slot(potion, template_filename='inventory_prayer_restore_potion.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
             return True
         return False
     
@@ -809,25 +813,11 @@ def manual_blood_blitz():
     client = RuneLiteClientWindow()
     client.bring_to_foreground()
 
-    _static_local_position_from_bottomright_in_runelite_window = [193, 146]
-    win_rect = client.get_rect()
-    if not win_rect:
-        print("RuneLite window not found, cannot cast.")
-        return
-    
-    x1 = win_rect['left']
-    y1 = win_rect['top']
-    w = win_rect['w']
-    h = win_rect['h']
-    
-    abs_x = x1 + w - _static_local_position_from_bottomright_in_runelite_window[0]
-    abs_y = y1 + h - _static_local_position_from_bottomright_in_runelite_window[1]
+    ui_interaction = UIInteraction(HumanizedGridClicker(), None, client, templates_dir='src/ui_templates')
 
     # select blood blitz
     pyautogui.press('F1')
-    
-    # move mouse to blood blitz
-    pyautogui.click(abs_x, abs_y)
+    ui_interaction.click_magic_slot(SCRIPT["settings"]["manual_spell_slot"], template_filename='magic_blood_blitz.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
 
     pyautogui.press('F2')
 

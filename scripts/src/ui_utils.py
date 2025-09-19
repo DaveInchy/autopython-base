@@ -3,6 +3,9 @@ import os
 import random
 import time
 import pyautogui
+import cv2
+import numpy as np
+from PIL import Image
 from typing import Literal
 from .client_window import RuneLiteClientWindow
 
@@ -128,6 +131,31 @@ def _get_grid_slot_coords(grid_name: Grid, slot: int) -> tuple | None:
         raise ValueError(f"Unknown layout_mode: {layout_mode} for {grid_name}")
 
     return (int(round(x)), int(round(y)))
+
+def find_ui_element_by_image(template_path: str, screenshot_region: tuple | None = None) -> tuple | None:
+    """
+    Finds a UI element on the screen using a template image.
+    Returns the center (x, y) coordinates of the found element, or None if not found.
+    """
+    try:
+        # pyautogui.locateOnScreen returns a Box(left, top, width, height)
+        # We need to convert the template_path to an absolute path
+        absolute_template_path = os.path.abspath(os.path.join(os.path.dirname(__file__), template_path))
+        
+        # Confidence can be adjusted based on how precise the match needs to be
+        # The region parameter can be used to limit the search area for performance
+        location = pyautogui.locateOnScreen(absolute_template_path, confidence=0.8, region=screenshot_region)
+        
+        if location:
+            # Calculate the center of the found image
+            center_x = location.left + location.width // 2
+            center_y = location.top + location.height // 2
+            return (center_x, center_y)
+        else:
+            return None
+    except pyautogui.PyAutoGUIException as e:
+        print(f"Error finding UI element by image: {e}")
+        return None
 
 # --- UI Component Classes ---
 
@@ -285,10 +313,11 @@ class HumanizedGridClicker:
 # --- UI Interaction Class ---
 
 class UIInteraction:
-    def __init__(self, clicker: HumanizedGridClicker, overlay, client_window: RuneLiteClientWindow):
+    def __init__(self, clicker: HumanizedGridClicker, overlay, client_window: RuneLiteClientWindow, templates_dir: str = 'ui_templates'):
         self.clicker = clicker
         self.overlay = overlay
         self.client_window = client_window
+        self.templates_dir = os.path.join(os.path.dirname(__file__), templates_dir)
 
     def _get_abs_coords(self, relative_coords: tuple) -> tuple | None:
         """Converts bottom-right relative coordinates to absolute screen coordinates.
@@ -310,6 +339,19 @@ class UIInteraction:
         abs_y = win_top + (win_height - rel_y)
         
         return (abs_x, abs_y)
+
+    def _get_abs_coords_from_image(self, template_filename: str) -> tuple | None:
+        """
+        Locates a UI element on the screen using a template image and returns its absolute screen coordinates.
+        The search region is limited to the RuneLite client window for efficiency.
+        """
+        template_path = os.path.join(self.templates_dir, template_filename)
+        win_rect = self.client_window.get_rect()
+        if not win_rect:
+            return None
+        
+        screenshot_region = (win_rect['left'], win_rect['top'], win_rect['w'], win_rect['h'])
+        return find_ui_element_by_image(template_path, screenshot_region)
 
     def _perform_click(self, grid_name: Grid | None, slot_coords: tuple, cell_size: dict | None = None):
         """Performs the actual click and adds a visual highlight."""
@@ -337,22 +379,59 @@ class UIInteraction:
                 # For equipment, just highlight the click point if no cell_size is available
                 self.overlay.add_highlight((abs_click_coords[0]-5, abs_click_coords[1]-5), (abs_click_coords[0]+5, abs_click_coords[1]+5))
 
-    def click_inventory_slot(self, slot: int):
-        center_coords = Inventory.get_slot_coords(slot)
+    def click_inventory_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
+        if use_image_recognition and template_filename:
+            abs_coords = self._get_abs_coords_from_image(template_filename)
+            if abs_coords:
+                pyautogui.click(abs_coords[0], abs_coords[1])
+                if self.overlay:
+                    self.overlay.add_highlight((abs_coords[0]-5, abs_coords[1]-5), (abs_coords[0]+5, abs_coords[1]+5))
+                return
+            else:
+                print(f"Warning: Template '{template_filename}' not found for inventory slot {slot}. Falling back to coordinate-based click.")
+
         rand_coords = self.clicker.get_randomized_coords('inventory', slot)
         self._perform_click('inventory', rand_coords, Inventory._grid_data['cellSize'])
 
-    def click_prayer_slot(self, slot: int):
-        center_coords = Prayer.get_slot_coords(slot)
+    def click_prayer_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
+        if use_image_recognition and template_filename:
+            abs_coords = self._get_abs_coords_from_image(template_filename)
+            if abs_coords:
+                pyautogui.click(abs_coords[0], abs_coords[1])
+                if self.overlay:
+                    self.overlay.add_highlight((abs_coords[0]-5, abs_coords[1]-5), (abs_coords[0]+5, abs_coords[1]+5))
+                return
+            else:
+                print(f"Warning: Template '{template_filename}' not found for prayer slot {slot}. Falling back to coordinate-based click.")
+
         rand_coords = self.clicker.get_randomized_coords('prayer', slot)
         self._perform_click('prayer', rand_coords, Prayer._grid_data['cellSize'])
 
-    def click_magic_slot(self, slot: int):
-        center_coords = Magic.get_slot_coords(slot)
+    def click_magic_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
+        if use_image_recognition and template_filename:
+            abs_coords = self._get_abs_coords_from_image(template_filename)
+            if abs_coords:
+                pyautogui.click(abs_coords[0], abs_coords[1])
+                if self.overlay:
+                    self.overlay.add_highlight((abs_coords[0]-5, abs_coords[1]-5), (abs_coords[0]+5, abs_coords[1]+5))
+                return
+            else:
+                print(f"Warning: Template '{template_filename}' not found for magic slot {slot}. Falling back to coordinate-based click.")
+
         rand_coords = self.clicker.get_randomized_coords('magic', slot)
         self._perform_click('magic', rand_coords, Magic._grid_data['cellSize'])
 
-    def click_equipment_slot(self, slot_name: EquipmentSlot):
+    def click_equipment_slot(self, slot_name: EquipmentSlot, template_filename: str | None = None, use_image_recognition: bool = False):
+        if use_image_recognition and template_filename:
+            abs_coords = self._get_abs_coords_from_image(template_filename)
+            if abs_coords:
+                pyautogui.click(abs_coords[0], abs_coords[1])
+                if self.overlay:
+                    self.overlay.add_highlight((abs_coords[0]-5, abs_coords[1]-5), (abs_coords[0]+5, abs_coords[1]+5))
+                return
+            else:
+                print(f"Warning: Template '{template_filename}' not found for equipment slot {slot_name}. Falling back to coordinate-based click.")
+
         center_coords = Equipment.get_slot_coords(slot_name)
         # Equipment slots don't have randomized clicks or cell sizes in HumanizedGridClicker
         # So we just use the center_coords directly for click and highlight
@@ -378,7 +457,7 @@ if __name__ == '__main__':
 
         # Initialize UIInteraction
         clicker = HumanizedGridClicker()
-        ui_interaction = UIInteraction(clicker, overlay, client)
+        ui_interaction = UIInteraction(clicker, overlay, client, templates_dir='src/ui_templates')
 
         # --- Test Inventory ---
         print("Pressing F2, rendering Inventory Grid...")
@@ -386,8 +465,9 @@ if __name__ == '__main__':
         time.sleep(0.5)
         overlay.clear()
         Inventory.render(overlay)
-        overlay.draw_text("Clicking Inventory Slot 5", position=(20, 10), font_size=20, color=(255,255,255))
-        ui_interaction.click_inventory_slot(5)
+        overlay.draw_text("Clicking Inventory Slot 5 (image-based)", position=(20, 10), font_size=20, color=(255,255,255))
+        # NOTE: You need to create 'src/ui_templates/inventory_slot_5.png' for this to work
+        ui_interaction.click_inventory_slot(5, template_filename='inventory_slot_5.png', use_image_recognition=True)
         time.sleep(2)
 
         # --- Test Prayer ---
@@ -396,8 +476,9 @@ if __name__ == '__main__':
         time.sleep(0.5)
         overlay.clear()
         Prayer.render(overlay)
-        overlay.draw_text("Clicking Prayer Slot 10", position=(20, 10), font_size=20, color=(255,255,255))
-        ui_interaction.click_prayer_slot(10)
+        overlay.draw_text("Clicking Prayer Slot 10 (image-based)", position=(20, 10), font_size=20, color=(255,255,255))
+        # NOTE: You need to create 'src/ui_templates/prayer_slot_10.png' for this to work
+        ui_interaction.click_prayer_slot(10, template_filename='prayer_slot_10.png', use_image_recognition=True)
         time.sleep(2)
 
         # --- Test Magic ---
@@ -406,8 +487,8 @@ if __name__ == '__main__':
         time.sleep(0.5)
         overlay.clear()
         Magic.render(overlay)
-        overlay.draw_text("Clicking Magic Slot 15", position=(20, 10), font_size=20, color=(255,255,255))
-        ui_interaction.click_magic_slot(15)
+        overlay.draw_text("Clicking Magic Slot 15 (coordinate-based fallback)", position=(20, 10), font_size=20, color=(255,255,255))
+        ui_interaction.click_magic_slot(15) # Fallback to coordinate-based
         time.sleep(2)
 
         # --- Test Equipment ---
@@ -416,8 +497,9 @@ if __name__ == '__main__':
         time.sleep(0.5)
         overlay.clear()
         # Equipment doesn't have a render method for the whole grid, so we just click
-        overlay.draw_text("Clicking Equipment Helm", position=(20, 10), font_size=20, color=(255,255,255))
-        ui_interaction.click_equipment_slot('helm')
+        overlay.draw_text("Clicking Equipment Helm (image-based)", position=(20, 10), font_size=20, color=(255,255,255))
+        # NOTE: You need to create 'src/ui_templates/equipment_helm.png' for this to work
+        ui_interaction.click_equipment_slot('helm', template_filename='equipment_helm.png', use_image_recognition=True)
         time.sleep(2)
 
         # --- Continuous Update Loop for Highlights ---

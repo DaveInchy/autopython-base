@@ -1,59 +1,110 @@
 {
-  "//": "This file maps the static coordinates and grid data of various user interface elements.",
-  "equipment": {
-    "f_key": "F3",
-    "helm": { "x": 132, "y": 282 },
-    "necklace": { "x": 131, "y": 247 },
-    "body": { "x": 133, "y": 208 },
-    "legs": { "x": 133, "y": 165 },
-    "feet": { "x": 135, "y": 126 },
-    "gloves": { "x": 187, "y": 128 },
-    "ring": { "x": 75, "y": 129 },
-    "offHand": { "x": 92, "y": 245 },
-    "mainHand": { "x": 176, "y": 254 },
-    "cape": { "x": 193, "y": 204 },
-    "ammo": { "x": 76, "y": 204 }
-  },
-  "inventory": {
-    "f_key": "F2",
-    "rows": 7,
-    "columns": 4,
-    "slots": 28,
-    "cellSize": {
-      "width": 42,
-      "height": 36
+    "//": "This file maps the static coordinates and grid data of various user interface elements.",
+    "equipment": {
+        "f_key": "F3",
+        "helm": {
+            "x": 132,
+            "y": 282
+        },
+        "necklace": {
+            "x": 131,
+            "y": 247
+        },
+        "body": {
+            "x": 133,
+            "y": 208
+        },
+        "legs": {
+            "x": 133,
+            "y": 165
+        },
+        "feet": {
+            "x": 135,
+            "y": 126
+        },
+        "gloves": {
+            "x": 187,
+            "y": 128
+        },
+        "ring": {
+            "x": 75,
+            "y": 129
+        },
+        "offHand": {
+            "x": 92,
+            "y": 245
+        },
+        "mainHand": {
+            "x": 176,
+            "y": 254
+        },
+        "cape": {
+            "x": 193,
+            "y": 204
+        },
+        "ammo": {
+            "x": 76,
+            "y": 204
+        }
     },
-    "layout_mode": "packed",
-    "coordinate_type": "corner",
-    "start": { "x": 216, "y": 304 },
-    "end": { "x": 49, "y": 52 }
-  },
-  "prayer": {
-    "f_key": "F4",
-    "rows": 6,
-    "columns": 5,
-    "slots": 29,
-    "cellSize": {
-      "width": 33,
-      "height": 33
+    "inventory": {
+        "f_key": "F2",
+        "rows": 7,
+        "columns": 4,
+        "slots": 28,
+        "cellSize": {
+            "width": 42,
+            "height": 36
+        },
+        "layout_mode": "packed",
+        "coordinate_type": "corner",
+        "start": {
+            "x": 216,
+            "y": 304
+        },
+        "end": {
+            "x": 49,
+            "y": 52
+        }
     },
-    "layout_mode": "stretched",
-    "coordinate_type": "corner",
-    "start": { "x": 220, "y": 295 },
-    "end": { "x": 39, "y": 86 }
-  },
-  "magic": {
-    "f_key": "F1",
-    "rows": 10,
-    "columns": 7,
-    "slots": 66,
-    "cellSize": {
-      "width": 27,
-      "height": 26
+    "prayer": {
+        "f_key": "F4",
+        "rows": 6,
+        "columns": 5,
+        "slots": 29,
+        "cellSize": {
+            "width": 33,
+            "height": 33
+        },
+        "layout_mode": "stretched",
+        "coordinate_type": "corner",
+        "start": {
+            "x": 220,
+            "y": 295
+        },
+        "end": {
+            "x": 39,
+            "y": 86
+        }
     },
-    "layout_mode": "stretched",
-    "coordinate_type": "center",
-    "start": { "x": 211, "y": 295 },
-    "end": { "x": 53, "y": 79 }
-  }
+    "magic": {
+        "f_key": "F1",
+        "rows": 10,
+        "columns": 7,
+        "slots": 66,
+        "cellSize": {
+            "width": 27,
+            "height": 26
+        },
+        "layout_mode": "stretched",
+        "coordinate_type": "center",
+        "start": {
+            "x": 211,
+            "y": 295
+        },
+        "end": {
+            "x": 53,
+            "y": 79
+        }
+    }
 }
