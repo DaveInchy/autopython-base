@@ -4,11 +4,12 @@ Main script for the Zulrah helper.
 This script continuously checks for nearby NPCs and prints their information
 to the console for debugging purposes.
 """
-
-import json
 import time
 import threading
 import sys
+import queue
+import signal
+from typing import Literal
 
 # pip packages/module
 import pyautogui # type: ignore
@@ -16,20 +17,20 @@ from pynput import mouse  # type: ignore # Add this line
 import keyboard # For scoped hotkeys
 
 # --- OSRS Macro SDK Imports ---
-from src import game_screen
 from src.graphics.window_overlay import WindowOverlay, DrawCursorPosition
 from src.client_window import RuneLiteClientWindow
-from src.ui_utils import HumanizedGridClicker, Inventory as ResizableInventoryGrid, Prayer as ResizablePrayerGrid, UIInteraction
+from src.ui_utils import HumanizedGridClicker, Inventory as ResizableInventoryGrid, Prayer as ResizablePrayerGrid, UIInteraction, Inventory, Prayer, Equipment, Magic
 from src.runelite_api import RuneLiteAPI
 from src.hotkeys import HotkeyManager
 from src.osrs_items import OSRSItems
 
 
 combat_mode_active = False
+health, prayer = 99, 99
 
 SCRIPT={
-    "version": "1.3",
-    "title": "ZulrahRapier",
+    "version": "1.6",
+    "title": "Zulrah Helper",
     "description": "A script that switches gear and prayers for Zulrah based on the current phase and what you have in your inventory",
     "tags": ["combat", "zulrah", "prayer", "gear"],
     "help": [
@@ -47,7 +48,7 @@ SCRIPT={
     "settings": {
         "_done": False,
         "_started": False,
-        "switch_speed": 0.0025,
+        "switch_speed": 0.05, # Half of pyautogui's default 0.1s pause
         "switch_count": 5,
         "api_port": 8080,
         "use_rotation_tracker": False, #TODO
@@ -74,8 +75,20 @@ SCRIPT={
         "use_image_recognition": False,
         "mode": "hotkeys",
         "manual_spell_slot": 1,
-        "manual_spell_book": "ancient",
+        "manual_spell_book": "standard",
         "render_grids_and_clicks": False,
+    },
+    "state": {
+        "start_time": int(0),
+        "time": int(0),
+        "phase": int(0),
+        "manual_phase_index": 0,
+        "last_eat_time": 0,
+        "Warning": None,
+        "player_style": "UNKNOWN",
+        "activated": False,
+        "matched_rotation": 0,
+        "next_phase_style": "UNKNOWN",
     },
     "setup": [
         {
@@ -90,329 +103,108 @@ SCRIPT={
             "default": 4,
             "setting": "switch_count",
         }
-    ]
+    ],
 }
 
+PhaseTableType = type({"phases": list, "jad": int, "ticks": list})
 class RotationManager:
     def __init__(self):
-        # Hardcoded phase data, now internal to the class or loaded once.
-        # This function encapsulates the data for clarity.
-        self._ZULRAH_DATA = self._get_zulrah_rotations_data()
+        self.confirmed_phases = []
+        self.matched_rotation = 0
+        self.wave_counted = 0
 
-        self.current_zulrah_history = []  # Stores observed phases (NPC ID and position)
-        self.identified_rotation = None     # Stores the confirmed rotation name (e.g., "rotation_1")
-
-        # Reverse maps coordinates to keys for efficient lookup
-        self._pos_key_to_coords = {
-            "ZulrahPosCenter": {"x": 6720, "y": 7616},
-            "ZulrahPosWest": {"x": 8000, "y": 7360},
-            "ZulrahPosEast": {"x": 5440, "y": 7360},
-            "ZulrahPosNorth": {"x": 6720, "y": 6208}
-        }
-        self._coords_to_pos_key = {
-            (v["x"], v["y"]): k for k, v in self._pos_key_to_coords.items()
-        }
-
-        self._player_tile_key_to_coords = {
-            "SWCornerTile": {"x": 7488, "y": 7872},
-            "SWCornerTileMelee": {"x": 7232, "y": 8000},
-            "WPillar": {"x": 7232, "y": 7232},
-            "WPillarN": {"x": 7232, "y": 7104},
-            "EPillar": {"x": 6208, "y": 7232},
-            "EPillarN": {"x": 6208, "y": 7104},
-            "SECornerTile": {"x": 6208, "y": 8000},
-            "SECornerTileMelee": {"x": 5952, "y": 7744},
-            "Middle": {"x": 6720, "y": 6848}
-        }
-
-    def _get_zulrah_rotations_data(self) -> dict:
-        """
-        Hardcoded Zulrah rotation data.
-        """
-        return {
+        self.data = {
             "types": {
-                2042: {
-                    "name": "Green",
-                    "style": "RANGE", # The original Java code mapped 2042 (Green) to P_FROM_MISSILES, indicating RANGE.
-                    "rgb": [
-                        {"min": [82-4, 85-4, 30-4], "max": [82+4, 85+4, 30+4]}, # Example placeholder, requires tuning
-                        {"min": [196-4, 202-4, 133-4], "max": [196+4, 202+4, 133+4]},
-                        {"min": [163-4, 182-4, 22-4], "max": [163+4, 182+4, 22+4]},
-                        {"min": [146-4, 149-4, 56-4], "max": [146+4, 149+4, 56+4]},
-                        {"min": [128-4, 137-4, 31-4], "max": [128+4, 137+4, 31+4]},
-                        {"min": [33-4, 39, 23-4], "max": [33+4, 39+4, 23+4]}
-                    ]
-                },
-                2043: {
-                    "name": "Red",
-                    "style": "MELEE",
-                    "rgb": [
-                        {"min": [86-4, 68-4, 63-4], "max": [86+4, 68+4, 63+4]}, # Example placeholder, requires tuning
-                        {"min": [205-4, 98-4, 27-4], "max": [205+4, 98+4, 27+4]},
-                        {"min": [164-4, 74-4, 27-4], "max": [164+4, 74+4, 27+4]},
-                        {"min": [37-4, 30-4, 26-4], "max": [37+4, 30+4, 26+4]}
-                    ]
-                },
-                2044: {
-                    "name": "Blue",
-                    "style": "MAGIC", # The original Java code mapped 2044 (Blue) to P_FROM_MAGIC, indicating MAGIC.
-                    "rgb": [
-                        {"min": [11-4, 46-4, 56-4], "max": [11+4, 46+4, 56+4]}, # Example placeholder, requires tuning
-                        {"min": [12-4, 87-4, 87-4], "max": [28+4, 192+4, 160+4]},
-                        {"min": [96-4, 14-4, 149-4], "max": [118+4, 21+4, 185+4]},
-                        {"min": [96-4, 14-4, 149-4], "max": [96+4, 14+4, 149+4]},
-                        {"min": [12-4, 87-4, 87-4], "max": [12+4, 87+4, 87+4]}
-                    ]
-                },
+                2042: {"name": "Green", "style": "RANGE"},
+                2043: {"name": "Red", "style": "MELEE"},
+                2044: {"name": "Blue", "style": "MAGIC"},
             },
-            "rotations": {
-                "rotation_1": {
-                    "types": [2042, 2043, 2044, 2042, 2044, 2043, 2042, 2044, 2042, 2043],
-                    "positions": [
-                        "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosEast",
-                        "ZulrahPosNorth", "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosNorth",
-                        "ZulrahPosEast", "ZulrahPosCenter"
-                    ],
-                    "player_tiles": [
-                        "SWCornerTile", "SWCornerTile", "SWCornerTile", "EPillar",
-                        "EPillarN", "EPillar", "Middle", "EPillar",
-                        "EPillar", "SWCornerTile"
-                    ],
+            "waves": {
+                1: {
+                    "phases": ["RANGE", "MELEE", "MAGIC", "RANGE", "MAGIC", "MELEE", "RANGE", "MAGIC", "RANGE", "MELEE"],
                     "jad": 9,
-                    "ticks": [28, 20, 18, 28, 39, 22, 20, 36, 48, 20] # Adjusted to be 0-indexed for phase 0 to N-1
+                    "ticks": [28, 20, 18, 28, 39, 22, 20, 36, 48, 20]
                 },
-                "rotation_2": {
-                    "types": [2042, 2043, 2044, 2042, 2043, 2044, 2042, 2044, 2042, 2043],
-                    "positions": [
-                        "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosNorth",
-                        "ZulrahPosCenter", "ZulrahPosEast", "ZulrahPosNorth", "ZulrahPosNorth",
-                        "ZulrahPosEast", "ZulrahPosCenter"
-                    ],
-                    "player_tiles": [
-                        "SWCornerTile", "SWCornerTile", "SWCornerTile", "EPillar",
-                        "EPillar", "EPillar", "WPillar", "WPillarN",
-                        "EPillar", "SWCornerTile"
-                    ],
+                2: {
+                    "phases": ["RANGE", "MELEE", "MAGIC", "RANGE", "MELEE", "MAGIC", "RANGE", "MAGIC", "RANGE", "MELEE"],
                     "jad": 9,
-                    "ticks": [28, 20, 17, 39, 22, 20, 28, 36, 48, 21] # Adjusted to be 0-indexed for phase 0 to N-1
+                    "ticks": [28, 20, 17, 39, 22, 20, 28, 36, 48, 21]
                 },
-                "rotation_3": {
-                    "types": [2042, 2042, 2043, 2044, 2042, 2044, 2042, 2042, 2044, 2042, 2044],
-                    "positions": [
-                        "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosCenter", "ZulrahPosEast",
-                        "ZulrahPosNorth", "ZulrahPosWest", "ZulrahPosCenter", "ZulrahPosEast",
-                        "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosCenter"
-                    ],
-                    "player_tiles": [
-                        "SWCornerTile", "SWCornerTile", "SECornerTile", "EPillar",
-                        "WPillar", "WPillar", "EPillar", "EPillar",
-                        "WPillar", "WPillar", "SWCornerTile"
-                    ],
+                3: {
+                    "phases": ["RANGE", "RANGE", "MELEE", "MAGIC", "RANGE", "MAGIC", "RANGE", "RANGE", "MAGIC", "RANGE", "MAGIC"],
                     "jad": 10,
-                    "ticks": [28, 30, 40, 20, 20, 20, 25, 20, 36, 35, 18] # Adjusted to be 0-indexed for phase 0 to N-1
+                    "ticks": [28, 30, 40, 20, 20, 20, 25, 20, 36, 35, 18]
                 },
-                "rotation_4": {
-                    "types": [2042, 2044, 2042, 2044, 2043, 2042, 2042, 2044, 2042, 2044, 2042, 2044],
-                    "positions": [
-                        "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosNorth", "ZulrahPosEast",
-                        "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosNorth", "ZulrahPosEast",
-                        "ZulrahPosCenter", "ZulrahPosCenter", "ZulrahPosWest", "ZulrahPosCenter"
-                    ],
-                    "player_tiles": [
-                        "SWCornerTile", "SWCornerTile", "EPillar", "EPillar",
-                        "WPillar", "WPillar", "WPillar", "EPillar",
-                        "WPillar", "WPillar", "WPillar", "SWCornerTile"
-                    ],
+                4: {
+                    "phases": ["RANGE", "MAGIC", "RANGE", "MAGIC", "MELEE", "RANGE", "RANGE", "MAGIC", "RANGE", "MAGIC", "RANGE", "MAGIC"],
                     "jad": 11,
-                    "ticks": [28, 36, 24, 30, 28, 17, 34, 33, 20, 27, 29, 18] # Adjusted to be 0-indexed for phase 0 to N-1
+                    "ticks": [28, 36, 24, 30, 28, 17, 34, 33, 20, 27, 29, 18]
                 }
             }
         }
 
-    def _get_position_key(self, local_point_x: int, local_point_y: int) -> str | None:
+    def match_rotation(self, confirmed_list: list) -> int:
         """
-        Reverse-maps LocalPoint coordinates to their string key in the zulrah_positions.
+        Finds the best rotation match based on a list of confirmed phases.
+        Returns the rotation ID (1-4) or 0 if no definitive match is found.
         """
-        return self._coords_to_pos_key.get((local_point_x, local_point_y))
+        if not confirmed_list:
+            return 0
 
-    def reset(self):
-        """Resets the tracker for a new Zulrah fight."""
-        self.current_zulrah_history = []
-        self.identified_rotation = None
+        possible_rotations = []
+        for rot_id, rot_data in self.data["waves"].items():
+            # Check if the confirmed phases are a prefix of this rotation's phases
+            if rot_data["phases"][:len(confirmed_list)] == confirmed_list:
+                possible_rotations.append(rot_id)
 
-    def add_observed_phase(self, zulrah_id: int, local_point_x: int, local_point_y: int):
-        """
-        Adds a new observed Zulrah phase to the history.
-
-        Args:
-            zulrah_id: The NPC ID of Zulrah (e.g., 2042, 2043, 2044).
-            local_point_x: The X coordinate of Zulrah's local position.
-            local_point_y: The Y coordinate of Zulrah's local position.
-        """
-        self.current_zulrah_history.append({
-            "id": zulrah_id,
-            "position": {"x": local_point_x, "y": local_point_y}
-        })
-
-    def get_next_zulrah_phase_info(self) -> dict:
-        """
-        Determines the current Zulrah rotation, phase index, and the *next* expected
-        Zulrah combat style and player position.
-
-        Returns:
-            A dictionary containing:
-                "identified_rotation": The name of the identified rotation (e.g., "rotation_1"), or None.
-                "current_phase_index": The 0-indexed position of the *last observed* phase in the rotation.
-                "next_combat_style": The combat style of the *next* Zulrah phase ("RANGE", "MELEE", "MAGIC"), or None.
-                "next_zulrah_position": Dictionary {"x": int, "y": int} of the next Zulrah position, or None.
-                "next_player_tile": Dictionary {"x": int, "y": int} of the next recommended player tile, or None.
-                "next_phase_ticks": The tick duration of the *upcoming* phase, or None.
-                "is_last_phase_in_rotation": True if the last observed phase was the final one in its rotation.
-                "possible_rotations": List of rotation names that still match (useful if not uniquely identified).
-                "error": An error message if something went wrong, otherwise None.
-        """
-        if not self.current_zulrah_history:
-            return {
-                "identified_rotation": None,
-                "current_phase_index": -1,
-                "next_combat_style": None,
-                "next_zulrah_position": None,
-                "next_player_tile": None,
-                "next_phase_ticks": None,
-                "is_last_phase_in_rotation": False,
-                "possible_rotations": list(self._ZULRAH_DATA["rotations"].keys()),
-                "error": None
-            }
-
-        processed_history = []
-        for obs in self.current_zulrah_history:
-            pos_key = self._get_position_key(obs["position"]["x"], obs["position"]["y"])
-            if pos_key is None:
-                return {
-                    "identified_rotation": None,
-                    "current_phase_index": -1,
-                    "next_combat_style": None,
-                    "next_zulrah_position": None,
-                    "next_player_tile": None,
-                    "next_phase_ticks": None,
-                    "is_last_phase_in_rotation": False,
-                    "possible_rotations": [],
-                    "error": f"Observed Zulrah position {obs['position']} not found in known positions."
-                }
-            processed_history.append({"id": obs["id"], "position_key": pos_key})
-
-        num_observed_phases = len(processed_history)
+        # If we have exactly one possible rotation, that's our match.
+        if len(possible_rotations) == 1:
+            return possible_rotations[0]
         
-        # Determine which rotations to check: all if not identified, else only the identified one.
-        rotations_to_check = [self.identified_rotation] if self.identified_rotation else self._ZULRAH_DATA["rotations"].keys()
+        # If multiple rotations are still possible, we don't have a definitive match yet.
+        # We return 0 to indicate ambiguity.
+        return 0
+
+    def update(self, phase: str) -> bool:
+        """
+        Adds a confirmed phase to the list and attempts to identify the rotation.
+        """
+        if not phase or phase == "UNKNOWN":
+            return False
         
-        matching_rotations = []
+        self.confirmed_phases.append(phase)
+        self.wave_counted = len(self.confirmed_phases)
+        self.matched_rotation = self.match_rotation(self.confirmed_phases)
+        return True
+    
+    def fetch(self) -> ({list, int, list}):
+        """
+        Fetches the data for the currently matched rotation.
+        """
+        if self.matched_rotation in self.data["waves"]:
+            return self.data["waves"][self.matched_rotation]
+        return None
 
-        for rotation_name in rotations_to_check:
-            rotation_data = self._ZULRAH_DATA["rotations"].get(rotation_name)
-            if not rotation_data:
-                continue
-
-            # Check if observed history can possibly match this rotation's length
-            if num_observed_phases > len(rotation_data["types"]):
-                continue
-
-            is_match = True
-            for i in range(num_observed_phases):
-                observed_type = processed_history[i]["id"]
-                observed_pos_key = processed_history[i]["position_key"]
-                
-                expected_type = rotation_data["types"][i]
-                expected_pos_key = rotation_data["positions"][i]
-
-                if observed_type != expected_type or observed_pos_key != expected_pos_key:
-                    is_match = False
-                    break
-            
-            if is_match:
-                matching_rotations.append(rotation_name)
-
-        # Update identified_rotation if a unique match is found
-        if len(matching_rotations) == 1:
-            self.identified_rotation = matching_rotations[0]
-        elif len(matching_rotations) == 0:
-            return {
-                "identified_rotation": None,
-                "current_phase_index": num_observed_phases - 1,
-                "next_combat_style": None,
-                "next_zulrah_position": None,
-                "next_player_tile": None,
-                "next_phase_ticks": None,
-                "is_last_phase_in_rotation": False,
-                "possible_rotations": [],
-                "error": "Observed sequence does not match any known rotation."
-            }
-        # If multiple matches, self.identified_rotation remains what it was, or None if still ambiguous.
-
-        current_phase_index = num_observed_phases - 1 # 0-indexed position of the *last observed* phase
-        
-        next_combat_style = None
-        next_zulrah_position = None
-        next_player_tile = None
-        next_phase_ticks = None
-        is_last_phase = False
-
-        if self.identified_rotation:
-            rotation_data = self._ZULRAH_DATA["rotations"][self.identified_rotation]
-            
-            # Check if the *current observed phase* is the final phase in the rotation.
-            if current_phase_index >= len(rotation_data["types"]) - 1:
-                is_last_phase = True
-                # No next phase info to provide as the rotation is complete.
-            else:
-                next_phase_index = current_phase_index + 1
-                next_zulrah_type_id = rotation_data["types"][next_phase_index]
-                
-                # Get combat style from zulrah_forms
-                next_combat_style = self._ZULRAH_DATA["types"].get(next_zulrah_type_id, {}).get("style")
-
-                # Get next Zulrah position
-                next_zulrah_pos_key = rotation_data["positions"][next_phase_index]
-                next_zulrah_position = self._pos_key_to_coords.get(next_zulrah_pos_key)
-
-                # Get next player tile
-                next_player_tile_key = rotation_data["player_tiles"][next_phase_index]
-                next_player_tile = self._player_tile_key_to_coords.get(next_player_tile_key)
-
-                # Get the ticks for the *upcoming* phase
-                if next_phase_index < len(rotation_data["ticks"]):
-                    next_phase_ticks = rotation_data["ticks"][next_phase_index]
-                
-        return {
-            "identified_rotation": self.identified_rotation,
-            "current_phase_index": current_phase_index,
-            "next_combat_style": next_combat_style,
-            "next_zulrah_position": next_zulrah_position,
-            "next_player_tile": next_player_tile,
-            "next_phase_ticks": next_phase_ticks,
-            "is_last_phase_in_rotation": is_last_phase,
-            "possible_rotations": matching_rotations,
-            "error": None
-        }
+    
     
 global PHASE_HANDLER
 PHASE_HANDLER: RotationManager = RotationManager()
 
 # --- Zulrah Constants ---
 ZULRAH_IDS = [2042, 2043, 2044] # Green, Red, Blue,
-ZULRAH_TYPES = ["RANGE", "MELEE", "MAGE"]
+ZULRAH_TYPES = ["RANGE", "MELEE", "MAGIC"]
 # but theres also a green one that does mage type damage
 
 ZULRAH_PHASE_MAP = {
-    1: {"type": "RANGE", "gear": "MAGE"},
+    1: {"type": "RANGE", "gear": "MAGIC"},
     2: {"type": "MELEE", "gear": "RANGE"},
-    3: {"type": "MAGE", "gear": "RANGE"},
+    3: {"type": "MAGIC", "gear": "RANGE"},
 }
 
 ZULRAH_PHASE_PRAYER = {
     1: {"type": "RANGE", "offense": 21, "protect": 18},
     2: {"type": "MELEE", "offense": 20, "protect": 19},
-    3: {"type": "MAGE", "offense": 20, "protect": 17},
+    3: {"type": "MAGIC", "offense": 20, "protect": 17},
 }
 
 # --- Configuration ---
@@ -427,65 +219,9 @@ HOTKEY_START_FIGHT='.';
 LOOP_INTERVAL = 1.0 # Seconds between checks
 
 global CURRENT_EQUIPPED_STYLE
+
 # global ACTION_QEUE
 # ACTION_QEUE=[]
-
-
-
-def detect_and_update_phase(client: RuneLiteClientWindow, screen: game_screen.GameScreen):
-    """
-    Detects the current Zulrah phase by searching for its colors in the full client window
-    and calculating a confidence score for each phase.
-    """
-    global PHASE_HANDLER
-
-    client_rect = client.get_rect()
-    if not client_rect:
-        print("Client window not found.")
-        return
-
-    full_window_region = (
-        client_rect['left'],
-        client_rect['top'],
-        client_rect['right'],
-        client_rect['bottom']
-    )
-
-    phase_scores = {}
-
-    # Iterate over each type of Zulrah (color)
-    for npc_id, type_data in PHASE_HANDLER._ZULRAH_DATA["types"].items():
-        match_count = 0
-        total_ranges = len(type_data["rgb"])
-
-        # Check how many of the color ranges for this phase are found
-        for color_range in type_data["rgb"]:
-            min_vals = color_range["min"]
-            max_vals = color_range["max"]
-            
-            if screen.find_color(color=(0,0,0), spectrum_range=[min_vals[0], min_vals[1], min_vals[2], max_vals[0], max_vals[1], max_vals[2]], region=full_window_region):
-                match_count += 1
-        
-        # Calculate confidence score
-        score = (match_count / total_ranges) * 100 if total_ranges > 0 else 0
-        phase_scores[type_data['name']] = score
-
-    # Find the phase with the highest score
-    if not phase_scores:
-        return
-
-    best_phase_name = max(phase_scores, key=phase_scores.get)
-    best_score = phase_scores[best_phase_name]
-
-    # Confidence threshold to consider a detection valid
-    DETECTION_THRESHOLD = 50.0
-
-    if best_score >= DETECTION_THRESHOLD:
-        print(f"Phase Detected: {best_phase_name} (Confidence: {best_score:.2f}%)")
-        # Position is unknown, so we cannot update the rotation manager yet.
-    else:
-        # This is useful for debugging color ranges
-        print(f"No phase detected above {DETECTION_THRESHOLD}%. Best guess: {best_phase_name} ({best_score:.2f}%)")
 
 def get_weapon_style_from_slot_one(api: RuneLiteAPI, items_db: OSRSItems) -> str:
     """
@@ -514,7 +250,7 @@ def get_weapon_style_from_slot_one(api: RuneLiteAPI, items_db: OSRSItems) -> str
         item_name = "dwarf remains"
     
     if "staff" in item_name or "wand" in item_name or "sceptre" in item_name or "trident" in item_name or item_id in magic_ids:
-        return "MAGE"
+        return "MAGIC"
     if "bow" in item_name or "blowpipe" in item_name or "crossbow" in item_name or "dart" in item_name or "thrownaxe" in item_name or "knife" in item_name or item_id in ranged_ids:
         return "RANGE"
 
@@ -524,10 +260,91 @@ def get_weapon_style_from_slot_one(api: RuneLiteAPI, items_db: OSRSItems) -> str
 #     """
 #     Placeholder function to determine the snake's current style.
 #     In a real implementation, this would use image recognition or other methods.
-#     For now, it randomly returns "MAGE" or "RANGE".
+#     For now, it randomly returns "MAGIC" or "RANGE".
 #     """
 #     import random
-#     return random.choice(["MAGE", "RANGE"])
+#     return random.choice(["MAGIC", "RANGE"])
+
+def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAPI, items_db: OSRSItems):
+    """
+    Renders useful information with an overlay
+    """
+    global SCRIPT
+    _list_start = [18, 124]
+    _font_size = 16
+
+    _list = [
+        {
+            "type": any,
+            "name": "time",
+            "display_name": "Time"
+        },
+        {
+            "type": Literal["RANGE", "MAGIC", "MELEE", "UNKNOWN"],
+            "name": "phase", # based on what hotkey has been pressed last,
+            "display_name": "Phase"
+        },
+        {
+            "type": str,
+            "name": "next_phase_style",
+            "display_name": "Next"
+        },
+        {
+            "type": int,
+            "name": "manual_phase_index",
+            "display_name": "Wave"
+        },
+    ]
+    
+    weapon = get_weapon_style_from_slot_one(api, items_db)
+    SCRIPT['state']["player_style"] = (weapon == "MAGIC" and "RANGE" or "MAGIC")
+
+    # Fetch rotation data but check if it's None before using it
+    rotation = PHASE_HANDLER.fetch()
+
+    if rotation:
+        # Safely get data from the rotation dictionary
+        jad_wave = rotation.get("jad")
+        ticks = rotation.get("ticks")
+
+        overlay.draw_text(
+            f"Jad Wave: {jad_wave}",
+            position=(_list_start[0], _list_start[1] + i * (_font_size+2)),
+            font_size=_font_size,
+            color=(0, 250, 0)
+        )
+
+        cooldown = ticks[SCRIPT['state']["manual_phase_index"]] * 0.4
+        formatted = value and time.strftime("%M:%S", time.gmtime(cooldown)) or "00.00"
+        if cooldown > 0:
+            overlay.draw_text(
+                f"{display_name}: {formatted}",
+                position=(_list_start[0], _list_start[1] + i * (_font_size+2)),
+                font_size=_font_size,
+                color=(250, 250, 0)
+            )
+
+    for i, item in enumerate(_list):
+        value = SCRIPT['state'].get(item['name'], '') 
+        display_name = item['display_name'] or item['name'].replace("_", " ").capitalize()
+
+        if item['name'] == "time":
+            formatted = value and time.strftime("%M:%S", time.gmtime(value)) or "00.00"
+            overlay.draw_text(
+                f"{display_name}: {formatted}",
+                position=(_list_start[0], _list_start[1] + i * (_font_size+2)),
+                font_size=_font_size,
+                color=(250, 250, 0)
+            )
+        else:
+            overlay.draw_text(
+                f"{display_name}: {value}",
+                position=(_list_start[0], _list_start[1] + i * (_font_size+2)),
+                font_size=_font_size,
+                color=(250, 250, 0)
+            )
+
+    return
 
 def disable_user_mouse_input():
     """
@@ -557,6 +374,19 @@ def enable_user_mouse_input():
     except:
         pass
 
+def is_on_cooldown(cooldown_name: str, duration: float) -> bool:
+    """
+    Checks if a named cooldown is currently active by checking the script's state.
+    """
+    last_action_time = SCRIPT['state'].get(f'last_{cooldown_name}_time', 0)
+    return time.time() - last_action_time < duration
+
+def set_cooldown(cooldown_name: str):
+    """
+    Sets the timestamp for a named cooldown in the script's state.
+    """
+    SCRIPT['state'][f'last_{cooldown_name}_time'] = time.time()
+
 def search_inventory(name="Shark") -> int | None:
     """
     Get the inventory slot of a specific item by name.
@@ -574,7 +404,7 @@ def search_inventory(name="Shark") -> int | None:
     
     return None
 
-def equip_next_gear(humanizer):
+def equip_next_gear(humanizer, api, items_db):
     """
     Example function to equip mage gear by clicking specific inventory slots.
     Adjust slot numbers as needed based on your inventory layout.
@@ -600,55 +430,67 @@ def equip_gear(type):
     """
     Equip gear based on the current equipped style.
     """
-    # get current mouse position
-    original_x, original_y = pyautogui.position()
+    global SCRIPT, CURRENT_EQUIPPED_STYLE
 
-    client = RuneLiteClientWindow()
-    client.bring_to_foreground()
+    # --- Store original pause value and set a new one for speed ---
+    original_pause = pyautogui.PAUSE
+    pyautogui.PAUSE = SCRIPT['settings']['switch_speed'] # Use configurable pause for switching
 
-    ui_interaction = UIInteraction(HumanizedGridClicker(), None, client)
-    
-    api = RuneLiteAPI()
-    items_db = OSRSItems()
+    try:
+        # get current mouse position
+        original_x, original_y = pyautogui.position()
 
-    weapon_style = get_weapon_style_from_slot_one(api, items_db)
-    CURRENT_EQUIPPED_STYLE = (weapon_style == "MAGE" and "RANGE" or "MAGE")
+        client = RuneLiteClientWindow()
+        client.bring_to_foreground()
 
-    # select a prayer based on the type
-    if type == "MAGE":
-        pyautogui.press('F4')
-        ui_interaction.click_prayer_slot(17, template_filename='prayer_protect_from_magic.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-        if CURRENT_EQUIPPED_STYLE == "MAGE":
-            equip_next_gear(ui_interaction)
+        humanizer = UIInteraction(HumanizedGridClicker(), None, client)
+        
+        api = RuneLiteAPI()
+        items_db = OSRSItems()
+        
+        weapon = get_weapon_style_from_slot_one(api, items_db)
+        CURRENT_EQUIPPED_STYLE = (weapon == "MAGIC" and "RANGE" or "MAGIC")
+
+        SCRIPT['state']["phase"] = type
+
+        # select a prayer based on the type
+        if type == "MAGIC":
             pyautogui.press('F4')
-            ui_interaction.click_prayer_slot(20, template_filename='prayer_augury.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-        # pyautogui.press('F4')  # Stay on prayer book for prayer switches
-        pyautogui.press('F2')  # Close Prayers into Inventory
+            humanizer.click_prayer_slot(17)
+            if CURRENT_EQUIPPED_STYLE == "MAGIC":
+                equip_next_gear(humanizer, api, items_db)
+                pyautogui.press('F4')
+                humanizer.click_prayer_slot(20)
+            # pyautogui.press('F4')  # Stay on prayer book for prayer switches
+            pyautogui.press('F2')  # Close Prayers into Inventory
 
-    elif type == "RANGE":
-        pyautogui.press('F4')
-        ui_interaction.click_prayer_slot(18, template_filename='prayer_protect_from_missiles.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-        if CURRENT_EQUIPPED_STYLE == "RANGE":
-            equip_next_gear(ui_interaction)
+        elif type == "RANGE":
             pyautogui.press('F4')
-            ui_interaction.click_prayer_slot(21, template_filename='prayer_rigour.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-        pyautogui.press('F2')  # Close Prayers into Inventory
+            humanizer.click_prayer_slot(18)
+            if CURRENT_EQUIPPED_STYLE == "RANGE":
+                equip_next_gear(humanizer, api, items_db)
+                pyautogui.press('F4')
+                humanizer.click_prayer_slot(21)
+            pyautogui.press('F2')  # Close Prayers into Inventory
 
-    elif type == "MELEE":
+        elif type == "MELEE":
 
-        # Protect from Melee doesnt have a use. you will need to dodge manually, so would only use this to make sure we have the right gear equipped
-        if CURRENT_EQUIPPED_STYLE == "MAGE":
-            equip_next_gear(ui_interaction)
-            pyautogui.press('F4')
-            ui_interaction.click_prayer_slot(20, template_filename='prayer_piety.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-        pyautogui.press('F2')  # Close Prayers into Inventory
-    
-    # move mouse back to original position
-    pyautogui.moveTo(original_x, original_y)
+            # Protect from Melee doesnt have a use. you will need to dodge manually, so would only use this to make sure we have the right gear equipped
+            if CURRENT_EQUIPPED_STYLE == "MAGIC":
+                equip_next_gear(humanizer, api, items_db)
+                pyautogui.press('F4')
+                humanizer.click_prayer_slot(20)
+            pyautogui.press('F2')  # Close Prayers into Inventory
+        
+        # move mouse back to original position
+        pyautogui.moveTo(original_x, original_y)
+        
+    finally:
+        # --- Restore the original pause value ---
+        pyautogui.PAUSE = original_pause
 
     return
         
-
 def equip_range():
     equip_gear(type="RANGE")
 
@@ -656,23 +498,48 @@ def equip_melee():
     equip_gear(type="MELEE")
 
 def equip_mage():
-    equip_gear(type="MAGE")
+    equip_gear(type="MAGIC")
+
+def get_async_hp_prayer(api: RuneLiteAPI, stop_event: threading.Event):
+    """
+    Get the current health and prayer points asynchronously.
+    """
+    try:
+        global health, prayer
+        while not stop_event.is_set():
+            health = api.get_health_points()
+            prayer = api.get_prayer_points()
+    finally:
+        print("Thread stopped")
+    
+    
 
 def update(ui: UIInteraction, client: RuneLiteClientWindow=None, api: RuneLiteAPI=None, stop_event: threading.Event=None):
     # process_q()
     # get mouse position
     original_x, original_y = pyautogui.position()
 
-    MIN_HP=45
+    MIN_HP=50
     MIN_PRAY=10
     
-    global PHASE_HANDLER
+    global SCRIPT
+    global current_rendered_grid
+    global health, prayer
     
-    health, prayer = api and (api.get_health_points(), api.get_prayer_points())
-
+    if health == None or health == 0:
+        print("Death detected")
+        SCRIPT['state']["Warning"] = "YOU DIED IDIOT"
+        on_death(stop_event)
+    
     if health:
         if health <= MIN_HP:
-    
+            # Check for eating cooldown before attempting to eat.
+            # OSRS eating is 3 ticks (1.8s). We'll use a slightly longer cooldown
+            # to ensure the health has time to update via the API.
+            if is_on_cooldown('eat', 1.8):
+                return # Still on cooldown, skip eating logic
+
+            SCRIPT['state']["Warning"] = "HEALTH is low"
             disable_user_mouse_input()
             ui.client_window.bring_to_foreground()
             pyautogui.press('F2')
@@ -680,108 +547,180 @@ def update(ui: UIInteraction, client: RuneLiteClientWindow=None, api: RuneLiteAP
             pyautogui.moveTo(original_x, original_y)
     
             enable_user_mouse_input()
-    else:
-        print("No health data")
     
     if prayer:
         if prayer <= MIN_PRAY:
     
+            SCRIPT['state']["Warning"] = "PRAYER is low"
             disable_user_mouse_input()
             ui.client_window.bring_to_foreground()
             pyautogui.press('F2')
-            on_low_prayer(ui)
+            on_low_prayer(ui, stop_event)
             pyautogui.moveTo(original_x, original_y)
     
             enable_user_mouse_input()
-    else:
-        print("No prayer data")
     
-    # phase = PHASE_HANDLER.get_next_zulrah_phase_info()
-    # print(phase)
-    # if phase:
-    #    if phase["error"]:
-    #        print(f"Error: {phase.error}")
-    #    else:
-    #        print(f"Current Rotation: {phase["identified_rotation"]}")
-    # if the ticks have gone by, wait for user (not machine) click, use color_utils to then match it with a color spectrum for each boss phase. ase soon as its confirmed. you can then calculate the next phase and add a progress point because of the ticks
-    
+    else: # this means we have 0 prayer
+        print("Supply shortage detected")
+        SCRIPT['state']["Warning"] = "No PRAYER points left"
+        panic_teleport(ui, stop_event)
 
-def enable_combat_mode(stop_event: threading.Event):
-    global combat_mode_active
-    if combat_mode_active:
-        return  # Already running
-    combat_mode_active = True
+def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
+    client: RuneLiteClientWindow = RuneLiteClientWindow()
+
+    # The overlay is now created in the main thread.
+    # We pass the queue to the combat thread.
+    ui = UIInteraction(HumanizedGridClicker(), None, client)
+    api = RuneLiteAPI()
+    items_db = OSRSItems()
+    
+    global SCRIPT, combat_mode_active
     print("Combat mode enabled. Gear/prayer hotkeys are active.")
-    
-    try:
-        # Start by enabling magic prayer, assuming you press W to start against the green snake, assures youre really ready
-        # Reset the state machine to its default for phase 1
-        # Start a loop with 0.4 seconds interval, make sure that we have a onGameTick(count=int) method so we can just cycle the start to end with each tich since the rotations themselves are static and run all on programmed timings etc.
-        client: RuneLiteClientWindow = RuneLiteClientWindow()
-        ui = UIInteraction(HumanizedGridClicker(), None, client, templates_dir='src/ui_templates')
-        api = RuneLiteAPI()
+    SCRIPT['state']["activated"] = True
+    SCRIPT['state']["Warning"] = ""
+    SCRIPT['state']["phase"] = "UNKNOWN"
+    SCRIPT['state']["player_style"] = "UNKNOWN"
+    SCRIPT['state']["start_time"] = time.time()
+    SCRIPT['state']["time"] = 0
 
-        use_image_recognition = SCRIPT["settings"]["use_image_recognition"]
-
-        loop_interval = 0.4 # seconds
-        while not stop_event.is_set():
-            start_time = time.time()
-            
-            update(ui, client, api, stop_event)
-
-            # Wait for the next iteration
-            end_time = time.time()
-            elapsed_time = end_time - start_time
-            sleep_time = loop_interval - elapsed_time
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-    finally:
-        combat_mode_active = False
-        print("Combat mode disabled. Gear/prayer hotkeys are inactive.")
+    def run_combat_mode(stop_event: threading.Event, q: queue.Queue):
+        global combat_mode_active
+        nonlocal client, ui, api, items_db
+        if combat_mode_active:
+            return  # Already running
         
+        # The overlay is no longer created or managed here.
 
-def on_same_health(time=5000):
+        thread2 = threading.Thread(target=get_async_hp_prayer, args=(api,stop_event,))
+        thread2.daemon = True
+        thread2.start()
+
+        combat_mode_active = True
+        try:
+            loop_interval = .1 # seconds
+            while not stop_event.is_set():
+                start_time = time.time()
+                
+                update(ui, client, api, stop_event)
+                SCRIPT['state']["time"] = (time.time() - SCRIPT['state']["start_time"])
+
+                # Instead of drawing, put the state into the queue for the main thread to render.
+                q.put({'type': 'render', 'state': SCRIPT['state'], 'client_rect': client.get_rect()})
+
+                # Wait for the next iteration
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                if elapsed_time < loop_interval:
+                    time.sleep(loop_interval - elapsed_time)
+                if elapsed_time > loop_interval:
+                    print(f"Loop took too long: {elapsed_time:.2f} seconds")
+
+            # Signal the main thread to close the overlay
+            q.put({'type': 'close'})
+            combat_mode_active = False
+            print("Combat mode disabled. Gear/prayer hotkeys are inactive.")
+            SCRIPT['state']['activated'] = False
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            combat_mode_active = False
+            SCRIPT['state']['activated'] = False
+            q.put({'type': 'close'}) # Ensure cleanup on error
+            raise e
+
+    thread1 = threading.Thread(target=run_combat_mode, args=(stop_event, q))
+    thread1.daemon = True 
+    thread1.start()
+    # Do not join, as it would block the hotkey trigger.
+
+def on_same_health():
     pass
 
-def on_death():
+def on_damage_taken():
+    pass
+
+def on_damage_healed():
+    pass
+
+def on_death(stop_event: threading.Event):
+    global combat_mode_active
+    if combat_mode_active:
+        print("Combat mode disabled due to death.")
+        combat_mode_active = False
+        stop_event.set()
     pass
 
 def on_low_health(ui: UIInteraction, stop_event: threading.Event):
 
     def consume_food():
-        food_ated=0
+        food_ated = 0
+        health_ated = 0
 
         # find a food and click it
         primary = search_inventory("shark")
         if primary:
             print(f"Found food in slot {primary}")
-            ui.click_inventory_slot(primary, template_filename='inventory_shark.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-            food_ated+=1
+            ui.click_inventory_slot(primary)
+            food_ated += 1
+            health_ated += 21
+            set_cooldown('eat') # Set cooldown because primary food was eaten
         
         combo_food = search_inventory("karambwan")
         if combo_food:
             print(f"Found combo food in slot {combo_food}")
-            ui.click_inventory_slot(combo_food, template_filename='inventory_karambwan.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-            food_ated+=1
+            ui.click_inventory_slot(combo_food)
+            food_ated += 1
+            health_ated += 18
+        
+        triple_food = search_inventory("brew")
+        restore_triple = search_inventory("restore")
+        if triple_food and restore_triple:
+            print(f"Found triple food in slot {triple_food}")
+            ui.click_inventory_slot(triple_food)
+            food_ated += 1
+            health_ated += 7
 
-        if food_ated==0:
+
+        if food_ated == 0:
             print("No food ated")
             return False
+        
+        if health_ated >= 41:
+            print(f"You over-ate maybe with healing {health_ated} points")
         
         return True
 
     ated = consume_food()
 
     if not ated:
-        teleport = search_inventory("teleport")
-        if teleport:
-            print(f"Found teleport in slot {teleport}")
-            ui.click_inventory_slot(teleport, template_filename='inventory_teleport.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-            print("Panic teleporting and stopping combat loop.")
-            stop_event.set()
-            return True
+       panic_teleport(ui, stop_event)
+       return True
 
-def on_low_prayer(ui):
+def panic_teleport(ui: UIInteraction, stop_event):
+    """
+    Panic teleport.
+    """
+    global combat_mode_active
+    global SCRIPT
+    if not combat_mode_active:
+        return
+
+    # get current mouse position
+    original_x, original_y = pyautogui.position()
+
+    teleport = search_inventory("teleport")
+    if teleport:
+        disable_user_mouse_input()
+        print(f"Found teleport in slot {teleport}")
+        ui.click_inventory_slot(teleport)
+        SCRIPT['state']["Warning"] = "Panic teleporting and stopping combat loop."
+        print("Panic teleporting and stopping combat loop.")
+        pyautogui.moveTo(original_x, original_y)
+        enable_user_mouse_input()
+        combat_mode_active = False
+        stop_event.set()
+        return True
+
+def on_low_prayer(ui: UIInteraction, stop_event: threading.Event):
 
     def consume_potion():
         # find a potion and click it
@@ -789,45 +728,106 @@ def on_low_prayer(ui):
         if potion:
             print(f"Found potion in slot {potion}")
             # Using a generic template name for prayer/restore potions
-            ui.click_inventory_slot(potion, template_filename='inventory_prayer_restore_potion.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
+            ui.click_inventory_slot(potion)
             return True
         return False
     
     drinked = consume_potion()
     if not drinked:
-        print("No potion drinked")
-
-# @TODO: Save and Load Settings
+        panic_teleport(ui, stop_event)
+        return True
 
 def manual_blood_blitz():
     """
     Manually trigger blood blitz.
     """
-    global combat_mode_active
+    global SCRIPT, combat_mode_active
+
+    # --- Store original pause value and set a new one for speed ---
+    original_pause = pyautogui.PAUSE
+    pyautogui.PAUSE = SCRIPT['settings']['switch_speed'] # Use configurable pause for switching
+
+    try:
+        if not combat_mode_active:
+            return
+
+        # get current mouse position
+        original_x, original_y = pyautogui.position()
+
+        client = RuneLiteClientWindow()
+        client.bring_to_foreground()
+
+        humanizer = UIInteraction(HumanizedGridClicker(), None, client)
+
+        # select blood blitz
+        pyautogui.press('F1')
+        if SCRIPT["settings"]["manual_spell_book"] == "ancient":
+            humanizer.click_magic_slot(21) # Blood blitz
+        else:
+            humanizer.click_magic_slot(21) #@TODO IDK, should be a setup part
+
+        pyautogui.press('F2')
+
+        # move mouse back to original position
+        pyautogui.click(original_x, original_y)
+    finally:
+        # --- Restore the original pause value ---
+        pyautogui.PAUSE = original_pause
+
+def reset_combat_state():
+    """
+    Resets the combat state variables to their initial values.
+    """
+    global SCRIPT
+    if not combat_mode_active:
+        print("Combat mode is not active. Nothing to reset.")
+        return
+
+    print("Resetting combat state...")
+    SCRIPT['state']['start_time'] = time.time()
+    SCRIPT['state']['time'] = 0
+    SCRIPT['state']['phase'] = "UNKNOWN"
+    SCRIPT['state']['manual_phase_index'] = 0
+    SCRIPT['state']['Warning'] = "State Reset"
+    # We don't reset 'activated' or 'player_style' as the loop is still active.
+
+def confirm_phase():
+    """
+    Manually confirms the current combat style as the next phase in the rotation,
+    updates the rotation manager, and increments the phase counter.
+    """
     if not combat_mode_active:
         return
 
-    # get current mouse position
-    original_x, original_y = pyautogui.position()
+    # Increment the visual counter
+    SCRIPT['state']['manual_phase_index'] += 1
+    if SCRIPT['state']['manual_phase_index'] == 1:
+        SCRIPT['state']['start_time'] = time.time()
+        SCRIPT['state']['time'] = 0
+    
+    # Get the current combat style (set by q, w, e)
+    current_style = SCRIPT['state'].get('phase', 'UNKNOWN')
 
-    client = RuneLiteClientWindow()
-    client.bring_to_foreground()
+    # Update the rotation manager with the confirmed style
+    if PHASE_HANDLER.update(phase=current_style):
+        print(f"Phase {SCRIPT['state']['manual_phase_index']} ({current_style}) confirmed.")
+        
+        # Store the results in the SCRIPT state so we can render them
+        SCRIPT['state']['matched_rotation'] = PHASE_HANDLER.matched_rotation
+        
+        next_phase_info = PHASE_HANDLER.fetch()
+        if next_phase_info:
+            # Ensure we don't go out of bounds
+            if PHASE_HANDLER.wave_counted < len(next_phase_info['phases']):
+                SCRIPT['state']['next_phase_style'] = next_phase_info['phases'][PHASE_HANDLER.wave_counted]
+            else:
+                SCRIPT['state']['next_phase_style'] = 'END'
+        else:
+            # If no rotation is matched yet, we don't know the next phase
+            SCRIPT['state']['next_phase_style'] = 'UNKNOWN'
 
-    ui_interaction = UIInteraction(HumanizedGridClicker(), None, client, templates_dir='src/ui_templates')
-
-    # select blood blitz
-    pyautogui.press('F1')
-    if SCRIPT["settings"]["manual_spell_book"] == "ancient":
-        ui_interaction.click_magic_ancient_slot(SCRIPT["settings"]["manual_spell_slot"], template_filename='magic_blood_blitz.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
     else:
-        ui_interaction.click_magic_slot(SCRIPT["settings"]["manual_spell_slot"], template_filename='magic_blood_blitz.png', use_image_recognition=SCRIPT["settings"]["use_image_recognition"])
-
-    pyautogui.press('F2')
-
-    # move mouse back to original position
-    pyautogui.moveTo(original_x, original_y)
-    time.sleep(0.025)
-    pyautogui.click(original_x, original_y)
+        print(f"Failed to confirm phase: {current_style}")
 
 if __name__ == "__main__":
 
@@ -883,8 +883,12 @@ if __name__ == "__main__":
             return True
 
     prompt=True;
-    switches=5;
+    switches=6;
+
     for k in sys.argv:
+        if "-y" in k:
+            prompt=False
+            continue
         if "--port=" in k:
             v = k.split("=")[1]
             SCRIPT["settings"]["api_port"] = v
@@ -895,57 +899,144 @@ if __name__ == "__main__":
             # set single setting
             SCRIPT["settings"]["switch_count"] = switches
             continue
-        if k == "-y":
-            prompt=False
-            continue
-        if "--manual-spell-slot=" in k:
+        if "--spell-num=" in k:
             v = k.split("=")[1]
             SCRIPT["settings"]["manual_spell_slot"] = int(v)
             continue
-        if "--manual-spell-book=" in k:
+        if "--spell-book=" in k:
             v = k.split("=")[1]
             SCRIPT["settings"]["manual_spell_book"] = v
             continue
-        if "--render-grids-and-clicks=" in k:
+        if "--render-grids-and-clicks=" in k or "--render=" in k:
             v = k.split("=")[1]
             SCRIPT["settings"]["render_grids_and_clicks"] = v.lower() == "true"
             continue
     
     if prompt==True:
-        result = prompt_for_setup();
+        result = prompt_for_setup()
         if result==False:
             exit(0)
 
     # --- Hotkey Registration ---
+    # This section is refactored to handle hotkeys in a non-blocking way.
+    # Each hotkey action runs in a new thread, and a lock prevents spamming.
+    action_lock = threading.Lock()
+    action_thread = None
+    def run_action_once(target_func):
+        """
+        Wrapper to run a function in a thread-safe manner, ensuring only one
+        action runs at a time.
+        """
+        if not action_lock.acquire(blocking=False):
+            # If we can't acquire the lock, another action is already running.
+            print("Action already in progress. Ignoring new request.")
+            return
+
+        try:
+            target_func()
+        finally:
+            # Release the lock when the action is done.
+            action_lock.release()
+
+    def create_action_thread(target):
+        """
+        Checks if combat mode is active and, if so, starts the target 
+        action in a new, non-blocking daemon thread.
+        """
+        if combat_mode_active:
+            global action_thread
+            # We pass the target function to `run_action_once`
+            thread = threading.Thread(target=run_action_once, args=(target,))
+            thread.daemon = True  # Allows main program to exit even if threads are running
+            thread.start()
+            
 
     # Scoped action hotkeys. They only work if combat_mode_active is True.
-    def scoped_equip_mage():
-        if combat_mode_active:
-            equip_mage()
+    # They now use the `create_action_thread` helper to run without blocking.
+    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_MAGE, lambda: create_action_thread(equip_mage))
+    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_RANGE, lambda: create_action_thread(equip_range))
+    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_MELEE, lambda: create_action_thread(equip_melee))
+    keyboard.add_hotkey("r", lambda: create_action_thread(manual_blood_blitz))
+    keyboard.add_hotkey("space", lambda: create_action_thread(confirm_phase))
+    keyboard.add_hotkey("ctrl+r", lambda: create_action_thread(reset_combat_state))
 
-    def scoped_equip_range():
-        if combat_mode_active:
-            equip_range()
-
-    def scoped_equip_melee():
-        if combat_mode_active:
-            equip_melee()
-            
-    def scoped_manual_blood_blitz():
-        if combat_mode_active:
-            manual_blood_blitz()
-
-    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_MAGE, scoped_equip_mage)
-    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_RANGE, scoped_equip_range)
-    keyboard.add_hotkey(HOTKEY_SWITCH_GEAR_FOR_MELEE, scoped_equip_melee)
-    keyboard.add_hotkey("r", scoped_manual_blood_blitz)
-
-    print(f"Action hotkeys ('{HOTKEY_SWITCH_GEAR_FOR_MAGE}', '{HOTKEY_SWITCH_GEAR_FOR_RANGE}', '{HOTKEY_SWITCH_GEAR_FOR_MELEE}', 'r') are registered.")
+    print(f"Action hotkeys ('{HOTKEY_SWITCH_GEAR_FOR_MAGE}', '{HOTKEY_SWITCH_GEAR_FOR_RANGE}', '{HOTKEY_SWITCH_GEAR_FOR_MELEE}', 'r', 'space', 'ctrl+r') are registered.")
     print("They will only function when combat mode is active.")
 
-    # Main combat loop manager
-    combat_loop_manager = HotkeyManager(HOTKEY_START_FIGHT, f"ctrl+{HOTKEY_START_FIGHT}")
-    combat_loop_manager.register_hotkeys(enable_combat_mode)
+    # --- Main Application Setup ---
+    # Create a queue for communication between threads
+    gui_queue = queue.Queue()
 
-    # Keep the script running until Ctrl+C is pressed
-    combat_loop_manager.wait_for_exit()
+    # Create the overlay in the main thread
+    client = RuneLiteClientWindow()
+    win_rect = client.get_rect()
+    if not win_rect:
+        print("RuneLite client not found. Exiting.")
+        exit()
+        
+    overlay = WindowOverlay(title="Zulrah Overlay", width=win_rect["w"], height=win_rect['h'], x=win_rect['left'], y=win_rect['top'])
+    api = RuneLiteAPI()
+    items_db = OSRSItems()
+
+    def process_gui_queue():
+        """
+        Process messages from the GUI queue to update the overlay.
+        This function runs in the main thread.
+        """
+        try:
+            message = gui_queue.get_nowait()
+
+            if message.get('type') == 'render':
+                state = message.get('state')
+                client_rect = message.get('client_rect')
+                
+                # Update SCRIPT state with the data from the combat thread
+                global SCRIPT
+                SCRIPT['state'] = state
+
+                overlay.clear()
+                if client_rect:
+                    overlay.set_position(client_rect['left'], client_rect['top'])
+                    overlay.set_size(client_rect['w'], client_rect['h'])
+                    overlay.bring_to_foreground()
+                    # The render function needs the overlay object
+                    render(client, overlay, api, items_db)
+                
+                overlay.update_overlay()
+
+            elif message.get('type') == 'close':
+                overlay.close()
+                # We might want to exit the script here, but closing the window
+                # will cause root.mainloop() to exit if it's the only window.
+                # For a clean exit, we can call root.quit()
+                overlay.root.quit()
+                return # Stop the after loop
+
+        except queue.Empty:
+            pass  # No messages in the queue
+
+        # Reschedule the function to run again after 10ms
+        overlay.root.after(10, process_gui_queue)
+
+    # Main combat loop manager
+    # We now pass the queue to the enable_combat_mode function
+    combat_loop_manager = HotkeyManager(HOTKEY_START_FIGHT, f"ctrl+{HOTKEY_START_FIGHT}")
+    combat_loop_manager.register_hotkeys(lambda stop_event: enable_combat_mode(stop_event, gui_queue))
+
+    print("Press Ctrl+C in the console to exit.")
+    
+    # --- Signal Handler for Ctrl+C ---
+    def sigint_handler(sig, frame):
+        print("\nEOF>>")
+        # Destroying the root window will cause the mainloop to exit.
+        overlay.root.destroy()
+
+    signal.signal(signal.SIGINT, sigint_handler)
+
+    # Start the GUI queue processor
+    overlay.root.after(10, process_gui_queue)
+    
+    # Start the Tkinter main loop. This is a blocking call.
+    overlay.root.mainloop()
+
+    print("Script finished.")

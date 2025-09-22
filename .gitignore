@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+GEMINI.md
+
 # C extensions
 *.so
 

@@ -56,14 +56,7 @@ class RuneLiteClientWindow:
 		win32gui.EnumWindows(enum_handler, found)
 		return found[0] if found else None
 
-	def get_rect(self) -> Literal[
-			'left',
-			'top',
-			'right',
-			'bottom',
-			'w',
-			'h',
-	]:
+	def get_rect(self) -> dict:
 		if not self.hwnd:
 			return None
 		rect = win32gui.GetWindowRect(self.hwnd)
@@ -77,6 +70,8 @@ class RuneLiteClientWindow:
 			'h': bottom - top,
 		}
 
+	def is_minimized(self):
+		return win32gui.IsIconic(self.hwnd)
 	def move(self, x, y):
 		rect = self.get_rect()
 		if rect:
@@ -107,9 +102,10 @@ class RuneLiteClientWindow:
 		return pid
 
 	def bring_to_foreground(self):
-		print(f"Attempting to bring window with handle {self.hwnd} to foreground.")
-		try:
-			win32gui.SetForegroundWindow(self.hwnd)
-		except Exception as e:
-			print(f"Error bringing window to foreground: {e}")
-			print("Please ensure the RuneLite window is not minimized.")
+		current_foreground_window = win32gui.GetForegroundWindow()
+		if self.hwnd != current_foreground_window:
+			try:
+				win32gui.SetForegroundWindow(self.hwnd)
+			except Exception as e:
+				# Log the error if necessary, but avoid printing to console in a tight loop
+				pass # Or use a logger if available

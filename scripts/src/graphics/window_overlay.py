@@ -22,20 +22,23 @@ class WindowOverlay:
         self.root.title(title)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
         self.root.attributes("-topmost", True)
-        self.root.attributes("-transparentcolor", "white")
         self.root.overrideredirect(True)
-        self.canvas = tk.Canvas(self.root, width=width, height=height, bg='white', highlightthickness=0)
+        self.root.attributes("-transparentcolor", "#FFF000")
+        self.canvas = tk.Canvas(self.root, width=width, height=height, bg='#FFF000', highlightthickness=0)
         self.canvas.pack()
         self.transparency = transparency
         self.width = width
         self.height = height
-        self.font_path = os.path.join(os.path.dirname(__file__), 'arial.otf')
+        self.font_path = os.path.join(os.path.dirname(__file__), '../../res/font/', 'OpenRS.ttf')
         if not os.path.exists(self.font_path):
             logger.warning(f"Font file not found at {self.font_path}. Using default font.")
             self.font_path = None
-        self.font_size = 14
+            print("DEBUG: Using default PIL font.") # Diagnostic print
+        else:
+            print(f"DEBUG: Using custom font: {self.font_path}") # Diagnostic print
+        self.font_size = 18
         self.font = ImageFont.truetype(self.font_path, self.font_size) if self.font_path else ImageFont.load_default()
-        self.text_color = (0, 0, 0)
+        self.text_color = (250,250,0)
         self.bg_color = (255, 255, 255)
         self.image = Image.new("RGBA", (width, height), (255, 255, 255, 0))
         self.draw = ImageDraw.Draw(self.image)
@@ -47,32 +50,10 @@ class WindowOverlay:
 
     def update_overlay(self):
         """
-        Updates the overlay by redrawing all elements, including fading highlights.
+        Updates the overlay by redrawing all elements.
         This method should be called continuously by a main loop.
         """
-        # 1. Clear the entire image buffer
-        self.draw.rectangle([(0, 0), (self.width, self.height)], fill=(255, 255, 255, 0))
-
-        # 2. Draw fading highlights
-        current_time = time.time()
-        highlights_to_keep = []
-        for h in self.active_highlights:
-            elapsed = current_time - h['start_time']
-            if elapsed < h['duration']:
-                progress = elapsed / h['duration']
-                r = int(h['color_start'][0] * (1 - progress) + h['color_end'][0] * progress)
-                g = int(h['color_start'][1] * (1 - progress) + h['color_end'][1] * progress)
-                b = int(h['color_start'][2] * (1 - progress) + h['color_end'][2] * progress)
-                alpha = int(255 * (1 - progress)) # Fade out alpha
-
-                current_color = (r, g, b, alpha)
-                
-                self.draw.rectangle([h['top_left'], h['bottom_right']], fill=current_color)
-                highlights_to_keep.append(h)
-            
-        self.active_highlights = highlights_to_keep
-
-        # 3. Update the Tkinter PhotoImage and canvas
+        # Update the Tkinter PhotoImage and canvas
         self.tk_image = ImageTk.PhotoImage(self.image)
         self.canvas.itemconfig(self.canvas_image, image=self.tk_image)
         self.canvas.image = self.tk_image
