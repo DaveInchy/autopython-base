@@ -29,7 +29,7 @@ combat_mode_active = False
 health, prayer = 99, 99
 
 SCRIPT={
-    "version": "1.6",
+    "version": "1.6.1",
     "title": "Zulrah Helper",
     "description": "A script that switches gear and prayers for Zulrah based on the current phase and what you have in your inventory",
     "tags": ["combat", "zulrah", "prayer", "gear"],
@@ -223,6 +223,12 @@ global CURRENT_EQUIPPED_STYLE
 # global ACTION_QEUE
 # ACTION_QEUE=[]
 
+def create_progress_bar(self, progress, width=50):
+    """Create ASCII progress bar"""
+    filled = int(width * progress / 100)
+    bar = '█' * filled + '░' * (width - filled)
+    return f'{bar}[{progress:.2f}%]'
+
 def get_weapon_style_from_slot_one(api: RuneLiteAPI, items_db: OSRSItems) -> str:
     """
     Checks the item in inventory slot one and determines its combat style.
@@ -281,7 +287,7 @@ def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAP
         },
         {
             "type": Literal["RANGE", "MAGIC", "MELEE", "UNKNOWN"],
-            "name": "phase", # based on what hotkey has been pressed last,
+            "name": "Zulrah", # based on what hotkey has been pressed last,
             "display_name": "Phase"
         },
         {
@@ -307,22 +313,7 @@ def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAP
         jad_wave = rotation.get("jad")
         ticks = rotation.get("ticks")
 
-        overlay.draw_text(
-            f"Jad Wave: {jad_wave}",
-            position=(_list_start[0], _list_start[1] + i * (_font_size+2)),
-            font_size=_font_size,
-            color=(0, 250, 0)
-        )
-
-        cooldown = ticks[SCRIPT['state']["manual_phase_index"]] * 0.4
-        formatted = value and time.strftime("%M:%S", time.gmtime(cooldown)) or "00.00"
-        if cooldown > 0:
-            overlay.draw_text(
-                f"{display_name}: {formatted}",
-                position=(_list_start[0], _list_start[1] + i * (_font_size+2)),
-                font_size=_font_size,
-                color=(250, 250, 0)
-            )
+    lines=0
 
     for i, item in enumerate(_list):
         value = SCRIPT['state'].get(item['name'], '') 
@@ -343,7 +334,25 @@ def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAP
                 font_size=_font_size,
                 color=(250, 250, 0)
             )
+        lines = i
 
+    if rotation:
+        overlay.draw_text(
+            f"Jad Wave: {jad_wave}",
+            position=(_list_start[0], _list_start[1] + lines+4 * (_font_size+1)),
+            font_size=_font_size,
+            color=(0, 250, 0)
+        )
+
+        cooldown = ticks[SCRIPT['state']["manual_phase_index"]] * 0.4
+        formatted = value and time.strftime("%M:%S", time.gmtime(cooldown)) or "00.00"
+        if cooldown > 0:
+            overlay.draw_text(
+                f"Next Phase: {formatted}",
+                position=(_list_start[0], _list_start[1] + lines+5 * (_font_size+2)),
+                font_size=_font_size,
+                color=(250, 250, 0)
+            )
     return
 
 def disable_user_mouse_input():

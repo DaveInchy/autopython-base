@@ -1,0 +1,57 @@
+{
+  "name": "route-1",
+  "steps": [
+    {
+      "method": "view-reset-zoomout-stable",
+      "args": {},
+      "timing": { "before": 0.5, "after": 0.5 }
+    },
+    {
+      "method": "minimap-image-detection",
+      "args": {
+        "@TODO": "associate function to loop over pathing routes @res/pathing/route-1/**.00*.*.png"
+      },
+      "timing": { "before": 0.5, "after": 0.5 }
+    },
+    {
+      "method": "view-reset-zoomout-down",
+      "args": {},
+      "timing": { "before": 0.5, "after": 0.5 }
+    },
+    {
+      "method": "gamescreen-action-sampler",
+      "args": {
+        "target_action": "Climb-into Underwall tunnel",
+        "scan_region_offset_x": 1,
+        "scan_region_offset_y": 1,
+        "scan_region_box_size": 10,
+        "ocr_region_p1_rel": [768, 505],
+        "ocr_region_p2_rel": [261, 487],
+        "ocr_region_below_mouse_offset_x": 10,
+        "ocr_region_below_mouse_offset_y": 10,
+        "ocr_region_below_mouse_width": 150,
+        "ocr_region_below_mouse_height": 20,
+        "word_similarity_threshold": 0.3,
+        "required_match_percentage": 0.7
+      },
+      "timing": { "before": 0, "after": 5.0 }
+    },
+    
+    {
+      "method": "minimap-compass-direction",
+      "args": {
+        "direction": "SE",
+        "range_pixels": 50
+      },
+      "timing": { "before": 0, "after": 1.0 }
+    },
+    {
+      "method": "minimap-compass-direction",
+      "args": {
+        "direction": "SE",
+        "range_pixels": 50
+      },
+      "timing": { "before": 0, "after": 0 }
+    }
+  ]
+}
