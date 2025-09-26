@@ -5,9 +5,13 @@ including color detection, OCR, and other screen analysis tools.
 
 import pyautogui
 import numpy as np
+import cv2
 from PIL import ImageGrab
 import easyocr
 import re
+import os
+import sys
+import warnings
 
 from .client_window import RuneLiteClientWindow
 
@@ -17,7 +21,23 @@ class GameScreen:
     """
 
     def __init__(self):
-        self.ocr_reader = easyocr.Reader(['en'])
+        # Temporarily suppress stdout/stderr and warnings to hide the noisy
+        # "CUDA not available" and "pin_memory" messages from easyocr/torch.
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+        sys.stdout = open(os.devnull, 'w')
+        sys.stderr = open(os.devnull, 'w')
+        
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            try:
+                self.ocr_reader = easyocr.Reader(['en'])
+            finally:
+                # Restore stdout/stderr
+                sys.stdout.close()
+                sys.stderr.close()
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
 
     # --- Color Detection --- #
 
@@ -74,16 +94,32 @@ class GameScreen:
             return None
 
     def read_text_from_region(self, x1, y1, x2, y2, clean_pattern=r'[^a-zA-Z0-9,.]'):
-        """Read text from a specific region of the screen."""
+        """Read text from a specific region of the screen with preprocessing."""
         try:
-            image = self.capture_region(x1, y1, x2, y2)
-            if image is None: return None
+            # 1. Capture the region
+            image_pil = ImageGrab.grab(bbox=(x1, y1, x2, y2))
+            if image_pil is None: return None
             
-            result = self.ocr_reader.readtext(image, detail=0)
+            # 2. Convert to OpenCV format
+            image_cv = cv2.cvtColor(np.array(image_pil), cv2.COLOR_RGB2BGR)
+
+            # 3. Convert to grayscale
+            gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+
+            # 4. Apply a binary threshold to isolate the text
+            _ , thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+
+            # 5. Invert the image for better OCR performance
+            thresh = cv2.bitwise_not(thresh)
+
+            # 6. Read text from the processed image
+            result = self.ocr_reader.readtext(thresh, detail=0)
             
             if result:
                 text = ' '.join(result)
                 if clean_pattern:
+                    # Allow hyphens and spaces in the cleaned text
+                    clean_pattern = r'[^a-zA-Z0-9,.\- ]'
                     text = re.sub(clean_pattern, '', text)
                 return text.strip()
             

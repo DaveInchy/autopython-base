@@ -1,119 +1,58 @@
-import json
+import sys
 import os
+import json
 import random
 import time
 import pyautogui
 from typing import Literal
-from .client_window import RuneLiteClientWindow
+
+# Add the project root to sys.path to allow for absolute imports
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.client_window import RuneLiteClientWindow
+from src.graphics.window_overlay import WindowOverlay
 
 # --- Data Loading ---
 def _load_ui_data():
     """Loads the JSONC file, stripping comments first."""
-    return {
-        "//": "This file maps the static coordinates and grid data of various user interface elements.",
-        "equipment": {
-            "f_key": "F3",
-            "helm": { "x": 132, "y": 282 },
-            "necklace": { "x": 131, "y": 247 },
-            "body": { "x": 133, "y": 208 },
-            "legs": { "x": 133, "y": 165 },
-            "feet": { "x": 135, "y": 126 },
-            "gloves": { "x": 187, "y": 128 },
-            "ring": { "x": 75, "y": 129 },
-            "offHand": { "x": 92, "y": 245 },
-            "mainHand": { "x": 176, "y": 254 },
-            "cape": { "x": 193, "y": 204 },
-            "ammo": { "x": 76, "y": 204 }
-        },
-        "inventory": {
-            "f_key": "F2",
-            "rows": 7,
-            "columns": 4,
-            "slots": 28,
-            "cellSize": {
-            "width": 42,
-            "height": 36
-            },
-            "layout_mode": "packed",
-            "coordinate_type": "corner",
-            "start": { "x": 216, "y": 304 },
-            "end": { "x": 49, "y": 52 }
-        },
-        "prayer": {
-            "f_key": "F4",
-            "rows": 6,
-            "columns": 5,
-            "slots": 29,
-            "cellSize": {
-            "width": 33,
-            "height": 33
-            },
-            "layout_mode": "stretched",
-            "coordinate_type": "corner",
-            "start": { "x": 220, "y": 295 },
-            "end": { "x": 39, "y": 86 }
-        },
-        "magic": {
-            "f_key": "F1",
-            "rows": 10,
-            "columns": 7,
-            "slots": 66,
-            "cellSize": {
-            "width": 27,
-            "height": 26
-            },
-            "layout_mode": "stretched",
-            "coordinate_type": "center",
-            "start": { "x": 211, "y": 295 },
-            "end": { "x": 53, "y": 79 }
-        }
-    }
+    jsonc_path = os.path.join(os.path.dirname(__file__), 'data', 'user-interface.jsonc')
+    try:
+        with open(jsonc_path, 'r') as f:
+            lines = f.readlines()
+        # Strip comments
+        lines = [line for line in lines if not line.strip().startswith('//')]
+        return json.loads(''.join(lines))
+    except FileNotFoundError:
+        print(f"Error: UI data file not found at {jsonc_path}. Using empty data.")
+        return {}
 
 _ui_data = _load_ui_data()
 
 # --- Type Hinting ---
 EquipmentSlot = Literal['helm', 'cape', 'necklace', 'mainHand', 'body', 'offHand', 'legs', 'gloves', 'feet', 'ring', 'ammo']
-Grid = Literal['inventory', 'prayer', 'magic']
+Grid = Literal['inventory', 'prayer', 'magic', "magic_ancient"]
 
-# --- Generic Grid Calculation ---
+# --- Generic Grid & Element Functions ---
 def _get_grid_slot_coords(grid_name: Grid, slot: int) -> tuple | None:
-    """
-    Calculates the (x, y) coordinates for a slot in a given grid based on its layout mode
-    and coordinate type (center or corner).
-    Returns the center coordinates of the slot.
-    """
     grid_data = _ui_data.get(grid_name.lower())
-    if not grid_data:
-        return None
-
-    slots = grid_data['slots']
-    if not (1 <= slot <= slots):
-        raise ValueError(f"Slot must be between 1 and {slots} for {grid_name}")
-
-    cols = grid_data['columns']
-    rows = grid_data['rows']
-    start_coord_raw = grid_data['start']
-    end_coord_raw = grid_data.get('end') # End coord might not be present for packed
+    if not grid_data: return None
+    if not (1 <= slot <= grid_data['slots']): raise ValueError(f"Slot must be between 1 and {grid_data['slots']} for {grid_name}")
+    
+    cols, rows = grid_data['columns'], grid_data['rows']
+    start_coord_raw, end_coord_raw = grid_data['start'], grid_data.get('end')
     cell_size = grid_data['cellSize']
-    layout_mode = grid_data.get('layout_mode', 'packed') # Default to packed if not specified
-    coordinate_type = grid_data.get('coordinate_type', 'center') # Default to center
-
-    col = (slot - 1) % cols
-    row = (slot - 1) // cols
-
-    # Adjust raw start/end coordinates to be center-based if they are corner-based
+    layout_mode = grid_data.get('layout_mode', 'packed')
+    coordinate_type = grid_data.get('coordinate_type', 'center')
+    col, row = (slot - 1) % cols, (slot - 1) // cols
     start_x, start_y = start_coord_raw['x'], start_coord_raw['y']
     end_x, end_y = (end_coord_raw['x'], end_coord_raw['y']) if end_coord_raw else (0,0)
 
     if coordinate_type == 'corner':
-        # Convert corner to center for start_coord
-        start_x = start_x - (cell_size['width'] / 2)
-        start_y = start_y - (cell_size['height'] / 2)
-        
-        if end_coord_raw: # Only adjust end if it exists
-            # Convert corner to center for end_coord
-            end_x = end_x + (cell_size['width'] / 2)
-            end_y = end_y + (cell_size['height'] / 2)
+        start_x -= (cell_size['width'] / 2)
+        start_y -= (cell_size['height'] / 2)
+        if end_coord_raw:
+            end_x += (cell_size['width'] / 2)
+            end_y += (cell_size['height'] / 2)
 
     if layout_mode == 'packed':
         x = start_x - (col * cell_size['width'])
@@ -121,7 +60,6 @@ def _get_grid_slot_coords(grid_name: Grid, slot: int) -> tuple | None:
     elif layout_mode == 'stretched':
         x_step = (start_x - end_x) / (cols - 1) if cols > 1 else 0
         y_step = (start_y - end_y) / (rows - 1) if rows > 1 else 0
-
         x = start_x - (col * x_step)
         y = start_y - (row * y_step)
     else:
@@ -129,11 +67,19 @@ def _get_grid_slot_coords(grid_name: Grid, slot: int) -> tuple | None:
 
     return (int(round(x)), int(round(y)))
 
-# --- UI Component Classes ---
+def find_ui_element_by_image(image_file: str, confidence=0.8, region: tuple | None = None) -> tuple | None:
+    if not os.path.exists(image_file):
+        print(f"Warning: Image file not found at {image_file}")
+        return None
+    try:
+        return pyautogui.locateCenterOnScreen(image_file, confidence=confidence, region=region)
+    except pyautogui.PyAutoGUIException as e:
+        print(f"Error finding UI element by image '{image_file}': {e}")
+        return None
 
+# --- UI Component Classes ---
 class Equipment:
     _equipment_data = _ui_data.get('equipment', {})
-
     @staticmethod
     def get_slot_coords(slot_name: EquipmentSlot) -> tuple | None:
         slot_info = Equipment._equipment_data.get(slot_name.lower())
@@ -141,291 +87,150 @@ class Equipment:
 
 class Inventory:
     _grid_data = _ui_data.get('inventory', {})
-
     @staticmethod
     def get_slot_coords(slot: int) -> tuple | None:
         return _get_grid_slot_coords('inventory', slot)
-    
-    @staticmethod
-    def get_slot_xy(slot: int, rect=None) -> tuple | None:
-        return _get_grid_slot_coords('inventory', slot)
-
-    @classmethod
-    def render(cls, overlay):
-        win_width = overlay.width
-        win_height = overlay.height
-        slots = cls._grid_data.get('slots', 0)
-        cell_size = cls._grid_data.get('cellSize', {})
-        cell_w, cell_h = cell_size.get('width', 0), cell_size.get('height', 0)
-
-        for i in range(1, slots + 1):
-            coords = cls.get_slot_coords(i)
-            if coords:
-                abs_x = win_width - coords[0]
-                abs_y = win_height - coords[1]
-
-                top_left = (abs_x - cell_w // 2, abs_y - cell_h // 2)
-                bottom_right = (abs_x + cell_w // 2, abs_y + cell_h // 2)
-                overlay.draw_rectangle(top_left, bottom_right, outline_color=(0, 255, 0), width=1)
-                overlay.draw_text(str(i), position=(abs_x, abs_y), color=(255, 255, 0))
 
 class Prayer:
     _grid_data = _ui_data.get('prayer', {})
-
     @staticmethod
     def get_slot_coords(slot: int) -> tuple | None:
         return _get_grid_slot_coords('prayer', slot)
-    
-    @staticmethod
-    def get_slot_xy(slot: int, rect=None) -> tuple | None:
-        return _get_grid_slot_coords('prayer', slot)
-    
-    @classmethod
-    def render(cls, overlay):
-        win_width = overlay.width
-        win_height = overlay.height
-        slots = cls._grid_data.get('slots', 0)
-        cell_size = cls._grid_data.get('cellSize', {})
-        cell_w, cell_h = cell_size.get('width', 0), cell_size.get('height', 0)
-
-        for i in range(1, slots + 1):
-            coords = cls.get_slot_coords(i)
-            if coords:
-                abs_x = win_width - coords[0]
-                abs_y = win_height - coords[1]
-
-                top_left = (abs_x - cell_w // 2, abs_y - cell_h // 2)
-                bottom_right = (abs_x + cell_w // 2, abs_y + cell_h // 2)
-                overlay.draw_rectangle(top_left, bottom_right, outline_color=(0, 255, 255), width=1)
-                overlay.draw_text(str(i), position=(abs_x, abs_y), color=(255, 255, 0))
 
 class Magic:
     _grid_data = _ui_data.get('magic', {})
-
     @staticmethod
     def get_slot_coords(slot: int) -> tuple | None:
         return _get_grid_slot_coords('magic', slot)
 
-    @classmethod
-    def render(cls, overlay):
-        win_width = overlay.width
-        win_height = overlay.height
-        slots = cls._grid_data.get('slots', 0)
-        cell_size = cls._grid_data.get('cellSize', {})
-        cell_w, cell_h = cell_size.get('width', 0), cell_size.get('height', 0)
-
-        for i in range(1, slots + 1):
-            coords = cls.get_slot_coords(i)
-            if coords:
-                abs_x = win_width - coords[0]
-                abs_y = win_height - coords[1]
-
-                top_left = (abs_x - cell_w // 2, abs_y - cell_h // 2)
-                bottom_right = (abs_x + cell_w // 2, abs_y + cell_h // 2)
-                overlay.draw_rectangle(top_left, bottom_right, outline_color=(255, 0, 255), width=1)
-                overlay.draw_text(str(i), position=(abs_x, abs_y), color=(255, 255, 0))
-
 # --- Humanized Clicking Logic ---
-
 class HumanizedGridClicker:
-    """
-    Generates human-like randomized click coordinates for UI grids.
-    - Clicks are biased towards the center of a cell.
-    - Accuracy increases over time to simulate muscle memory.
-    """
     def __init__(self, learning_rate=0.05, initial_std_dev_factor=0.25):
-        self.proficiency = {
-            'inventory': 0,
-            'prayer': 0,
-            'magic': 0
-        }
+        self.proficiency = {'inventory': 0, 'prayer': 0, 'magic': 0, 'magic_ancient': 0}
         self.learning_rate = learning_rate
         self.initial_std_dev_factor = initial_std_dev_factor
 
     def get_randomized_coords(self, grid_name: Grid, slot: int) -> tuple | None:
-        """ 
-        Calculates a randomized (x, y) coordinate within a grid cell.
-        """ 
         grid_data = _ui_data.get(grid_name)
-        if not grid_data:
-            return None
-
+        if not grid_data: return None
         center_coords = _get_grid_slot_coords(grid_name, slot)
-        if not center_coords:
-            return None
-        
+        if not center_coords: return None
         center_x, center_y = center_coords
-        cell_w = grid_data['cellSize']['width']
-        cell_h = grid_data['cellSize']['height']
-
-        # Update proficiency for this grid type
+        cell_w, cell_h = grid_data['cellSize']['width'], grid_data['cellSize']['height']
         self.proficiency[grid_name] += 1
-        
-        # As proficiency increases, standard deviation decreases, making clicks more accurate
         proficiency_factor = 1 + self.proficiency[grid_name] * self.learning_rate
         std_dev_x = (cell_w * self.initial_std_dev_factor) / proficiency_factor
         std_dev_y = (cell_h * self.initial_std_dev_factor) / proficiency_factor
-
-        # Generate a random point using a Gaussian distribution
-        rand_x = random.gauss(center_x, std_dev_x)
-        rand_y = random.gauss(center_y, std_dev_y)
-
-        # Clamp the coordinates to the cell boundaries
-        min_x = center_x - cell_w / 3
-        max_x = center_x + cell_w / 3
-        min_y = center_y - cell_h / 3
-        max_y = center_y + cell_h / 3
-
-        clamped_x = max(min_x, min(rand_x, max_x))
-        clamped_y = max(min_y, min(rand_y, max_y))
-
+        rand_x, rand_y = random.gauss(center_x, std_dev_x), random.gauss(center_y, std_dev_y)
+        min_x, max_x = center_x - cell_w / 3, center_x + cell_w / 3
+        min_y, max_y = center_y - cell_h / 3, center_y + cell_h / 3
+        clamped_x, clamped_y = max(min_x, min(rand_x, max_x)), max(min_y, min(rand_y, max_y))
         return (int(round(clamped_x)), int(round(clamped_y)))
 
-
 # --- UI Interaction Class ---
-
 class UIInteraction:
-    def __init__(self, clicker: HumanizedGridClicker, overlay, client_window: RuneLiteClientWindow):
+    def __init__(self, clicker: HumanizedGridClicker, overlay, client_window: RuneLiteClientWindow, templates_dir: str = '../res/image'):
         self.clicker = clicker
         self.overlay = overlay
         self.client_window = client_window
+        self.templates_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), templates_dir))
 
     def _get_abs_coords(self, relative_coords: tuple) -> tuple | None:
-        """Converts bottom-right relative coordinates to absolute screen coordinates.
-        Returns None if the RuneLite client window cannot be found.
-        """
         win_rect = self.client_window.get_rect()
-        if not win_rect:
-            return None # Indicate that client window was not found
-
-        win_left = win_rect['left']
-        win_top = win_rect['top']
-        win_width = win_rect["w"]
-        win_height = win_rect["h"]
-
-        rel_x = relative_coords[0]
-        rel_y = relative_coords[1]
-
-        abs_x = win_left + (win_width - rel_x)
-        abs_y = win_top + (win_height - rel_y)
-        
+        if not win_rect: return None
+        abs_x = win_rect['left'] + (win_rect["w"] - relative_coords[0])
+        abs_y = win_rect['top'] + (win_rect["h"] - relative_coords[1])
         return (abs_x, abs_y)
 
-    def _perform_click(self, grid_name: Grid | None, slot_coords: tuple, cell_size: dict | None = None):
-        """Performs the actual click and adds a visual highlight."""
-        abs_click_coords = self._get_abs_coords(slot_coords)
+    def _get_abs_coords_from_image(self, template_filename: str) -> tuple | None:
+        template_path = os.path.join(self.templates_dir, template_filename)
+        win_rect = self.client_window.get_rect()
+        if not win_rect: return None
+        region = (win_rect['left'], win_rect['top'], win_rect['w'], win_rect['h'])
+        return find_ui_element_by_image(template_path, region=region)
 
-        # --- DEBUG: Draw a temporary dot at the click location ---
-        if self.overlay:
-            self.overlay.draw_rectangle((abs_click_coords[0]-3, abs_click_coords[1]-3), (abs_click_coords[0]+3, abs_click_coords[1]+3), fill_color=(255, 0, 0))
-            self.overlay.update_overlay() # Force update to show dot immediately
-            # time.sleep(0.1) # Keep dot visible briefly
-        # --- END DEBUG ---
-
+    def _perform_click(self, abs_click_coords: tuple):
+        if not abs_click_coords: return
         pyautogui.click(abs_click_coords[0], abs_click_coords[1])
-        time.sleep(0.02)
-        # Add highlight only if an overlay is provided
         if self.overlay:
-            if cell_size:
-                # Calculate top-left and bottom-right for highlight rectangle
-                abs_x, abs_y = abs_click_coords
-                cell_w, cell_h = cell_size.get('width', 0), cell_size.get('height', 0) if cell_size else (0,0)
-                top_left_highlight = (abs_x - cell_w // 2, abs_y - cell_h // 2)
-                bottom_right_highlight = (abs_x + cell_w // 2, abs_y + cell_h // 2)
-                self.overlay.add_highlight(top_left_highlight, bottom_right_highlight)
-            else:
-                # For equipment, just highlight the click point if no cell_size is available
-                self.overlay.add_highlight((abs_click_coords[0]-5, abs_click_coords[1]-5), (abs_click_coords[0]+5, abs_click_coords[1]+5))
+            self.overlay.add_highlight((abs_click_coords[0]-5, abs_click_coords[1]-5), (abs_click_coords[0]+5, abs_click_coords[1]+5), duration=0.5)
+        time.sleep(0.01)
 
-    def click_inventory_slot(self, slot: int):
-        center_coords = Inventory.get_slot_coords(slot)
-        rand_coords = self.clicker.get_randomized_coords('inventory', slot)
-        self._perform_click('inventory', rand_coords, Inventory._grid_data['cellSize'])
+    def _click_slot(self, grid_name: Grid, slot: int, template_filename: str | None, use_image_recognition: bool):
+        abs_coords = None
+        if use_image_recognition and template_filename:
+            abs_coords = self._get_abs_coords_from_image(template_filename)
+            if not abs_coords:
+                print(f"Warning: Template '{template_filename}' not found for {grid_name} slot {slot}. Falling back to coordinate-based click.")
+        if not abs_coords:
+            rand_coords = self.clicker.get_randomized_coords(grid_name, slot)
+            abs_coords = self._get_abs_coords(rand_coords)
+        self._perform_click(abs_coords)
 
-    def click_prayer_slot(self, slot: int):
-        center_coords = Prayer.get_slot_coords(slot)
-        rand_coords = self.clicker.get_randomized_coords('prayer', slot)
-        self._perform_click('prayer', rand_coords, Prayer._grid_data['cellSize'])
+    def click_inventory_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
+        self._click_slot('inventory', slot, template_filename, use_image_recognition)
 
-    def click_magic_slot(self, slot: int):
-        center_coords = Magic.get_slot_coords(slot)
-        rand_coords = self.clicker.get_randomized_coords('magic', slot)
-        self._perform_click('magic', rand_coords, Magic._grid_data['cellSize'])
+    def click_prayer_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
+        self._click_slot('prayer', slot, template_filename, use_image_recognition)
 
-    def click_equipment_slot(self, slot_name: EquipmentSlot):
-        center_coords = Equipment.get_slot_coords(slot_name)
-        # Equipment slots don't have randomized clicks or cell sizes in HumanizedGridClicker
-        # So we just use the center_coords directly for click and highlight
-        self._perform_click(None, center_coords, None) # No grid_name or cell_size for equipment
+    def click_magic_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
+        self._click_slot('magic', slot, template_filename, use_image_recognition)
 
+    def click_equipment_slot(self, slot_name: EquipmentSlot, template_filename: str | None = None, use_image_recognition: bool = False):
+        abs_coords = None
+        if use_image_recognition and template_filename:
+            abs_coords = self._get_abs_coords_from_image(template_filename)
+            if not abs_coords:
+                print(f"Warning: Template '{template_filename}' not found for equipment slot {slot_name}. Falling back to coordinate-based click.")
+        if not abs_coords:
+            center_coords = Equipment.get_slot_coords(slot_name)
+            abs_coords = self._get_abs_coords(center_coords)
+        self._perform_click(abs_coords)
 
 if __name__ == '__main__':
-    import time
-    from graphics.window_overlay import WindowOverlay
-    from client_window import RuneLiteClientWindow
-
-    print("--- Automated UI Grid Renderer ---")
-    
+    print("--- UI Utils Demo ---")
     client = RuneLiteClientWindow()
     win_rect = client.get_rect()
-
     if not win_rect:
         print("RuneLite window not found. Exiting.")
     else:
-        overlay = WindowOverlay(title="GridRenderer", width=win_rect["w"], height=win_rect["h"], x=win_rect[1], y=win_rect[2])
+        overlay = WindowOverlay(title="UI Utils Demo", width=win_rect["w"], height=win_rect["h"], x=win_rect['left'], y=win_rect['top'])
         client.bring_to_foreground()
         time.sleep(0.5)
+        ui_interaction = UIInteraction(HumanizedGridClicker(), overlay, client)
 
-        # Initialize UIInteraction
-        clicker = HumanizedGridClicker()
-        ui_interaction = UIInteraction(clicker, overlay, client)
+        print("\n--- Demo Mode: Image Recognition (with coordinate fallback) ---")
+        print("NOTE: This demo requires template images in 'scripts/res/image/'")
 
         # --- Test Inventory ---
-        print("Pressing F2, rendering Inventory Grid...")
+        print("Pressing F2, attempting to click Inventory Slot 5 via image...")
         pyautogui.press('f2')
         time.sleep(0.5)
-        overlay.clear()
-        Inventory.render(overlay)
-        overlay.draw_text("Clicking Inventory Slot 5", position=(20, 10), font_size=20, color=(255,255,255))
-        ui_interaction.click_inventory_slot(5)
+        overlay.draw_text("Clicking Inventory Slot 5 (image-based)", position=(20, 10), font_size=20, color=(255,255,255))
+        ui_interaction.click_inventory_slot(5, template_filename='inventory_shark.png', use_image_recognition=True)
         time.sleep(2)
 
         # --- Test Prayer ---
-        print("Pressing F4, rendering Prayer Grid...")
+        print("Pressing F4, attempting to click Prayer Slot 10 (Rigour) via image...")
         pyautogui.press('f4')
         time.sleep(0.5)
-        overlay.clear()
-        Prayer.render(overlay)
-        overlay.draw_text("Clicking Prayer Slot 10", position=(20, 10), font_size=20, color=(255,255,255))
-        ui_interaction.click_prayer_slot(10)
+        overlay.draw_text("Clicking Prayer Slot 10 (image-based)", position=(20, 10), font_size=20, color=(255,255,255))
+        ui_interaction.click_prayer_slot(21, template_filename='prayer_rigour.png', use_image_recognition=True)
         time.sleep(2)
 
         # --- Test Magic ---
-        print("Pressing F1, rendering Magic Grid...")
+        print("Pressing F1, clicking Magic Slot 15 (coordinate-based only)...")
         pyautogui.press('f1')
         time.sleep(0.5)
-        overlay.clear()
-        Magic.render(overlay)
-        overlay.draw_text("Clicking Magic Slot 15", position=(20, 10), font_size=20, color=(255,255,255))
+        overlay.draw_text("Clicking Magic Slot 15 (coordinate-based)", position=(20, 10), font_size=20, color=(255,255,255))
         ui_interaction.click_magic_slot(15)
         time.sleep(2)
 
-        # --- Test Equipment ---
-        print("Pressing F3, rendering Equipment (no grid)...")
-        pyautogui.press('f3')
-        time.sleep(0.5)
-        overlay.clear()
-        # Equipment doesn't have a render method for the whole grid, so we just click
-        overlay.draw_text("Clicking Equipment Helm", position=(20, 10), font_size=20, color=(255,255,255))
-        ui_interaction.click_equipment_slot('helm')
-        time.sleep(2)
-
-        # --- Continuous Update Loop for Highlights ---
         print("\nHighlights will now fade. Press Ctrl+C to exit.")
         try:
             while True:
                 overlay.update_overlay()
-                time.sleep(1/60) # Update at 60 FPS
+                time.sleep(1/60)
         except KeyboardInterrupt:
             pass
 

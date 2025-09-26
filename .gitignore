@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+<<<<<<< HEAD
+GEMINI.md
+=======
+*GEMINI.md
+>>>>>>> c1a2684 (Actually just to rebase from branch)
+
 # C extensions
 *.so
 
