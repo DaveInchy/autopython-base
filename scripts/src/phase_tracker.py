@@ -1,6 +1,41 @@
-"""
-This module handles the tracking of Zulrah's phases using the RuneLite API.
-"""
+import threading
+import time
+from .game_screen import GameScreen
+
+class PhaseDetector:
+    def __init__(self, phase_data, on_phase_change=None):
+        self.phase_colors = {phase_info['style']: phase_info['colors'] for phase_info in phase_data.values()}
+        self.game_screen = GameScreen()
+        self.on_phase_change = on_phase_change
+        self.last_phase = None
+        self.running = False
+        self.thread = None
+
+    def _detector_loop(self, region, samples, tolerance, interval, exclude_region):
+        while self.running:
+            phase, confidence = self.game_screen.detect_phase_from_screen(region, samples, tolerance, self.phase_colors, exclude_region)
+            if phase and phase != self.last_phase:
+                self.last_phase = phase
+                if self.on_phase_change:
+                    self.on_phase_change(phase, confidence)
+            time.sleep(interval)
+
+    def start(self, region: tuple, samples: int = 16, tolerance: int = 20, interval: float = 0.1, exclude_region: tuple = None):
+        if self.running:
+            print("Phase detector is already running.")
+            return
+
+        self.running = True
+        self.thread = threading.Thread(target=self._detector_loop, args=(region, samples, tolerance, interval, exclude_region))
+        self.thread.daemon = True
+        self.thread.start()
+
+    def stop(self):
+        self.running = False
+        if self.thread:
+            self.thread.join()
+        self.last_phase = None
+
 
 class RotationManager:
     def __init__(self):
@@ -42,35 +77,54 @@ class RotationManager:
             "types": {
                 2042: {
                     "name": "Green",
-                    "style": "RANGE", # The original Java code mapped 2042 (Green) to P_FROM_MISSILES, indicating RANGE.
-                    "rgb": [
-                        {"min": [82-4, 85-4, 30-4], "max": [82+4, 85+4, 30+4]}, # Example placeholder, requires tuning
-                        {"min": [196-4, 202-4, 133-4], "max": [196+4, 202+4, 133+4]},
-                        {"min": [163-4, 182-4, 22-4], "max": [163+4, 182+4, 22+4]},
-                        {"min": [146-4, 149-4, 56-4], "max": [146+4, 149+4, 56+4]},
-                        {"min": [128-4, 137-4, 31-4], "max": [128+4, 137+4, 31+4]},
-                        {"min": [33-4, 39, 23-4], "max": [33+4, 39+4, 23+4]}
+                    "style": "RANGE",
+                    "colors": [
+                        (129, 144, 17),
+                        (129, 144, 17),
+                        (120, 119, 17),
+                        (67, 84, 20),
+                        (192, 215, 26),
+                        (180, 201, 24),
+                        (122, 137, 14),
+                        (153, 171, 21),
+                        (142, 159, 17),
+                        (41, 53, 10),
+                        (88, 87, 9),
+                        (60, 58, 0),
+                        (84, 70, 29),
+                        (129, 144, 17)
                     ]
                 },
                 2043: {
                     "name": "Red",
                     "style": "MELEE",
-                    "rgb": [
-                        {"min": [86-4, 68-4, 63-4], "max": [86+4, 68+4, 63+4]}, # Example placeholder, requires tuning
-                        {"min": [205-4, 98-4, 27-4], "max": [205+4, 98+4, 27+4]},
-                        {"min": [164-4, 74-4, 27-4], "max": [164+4, 74+4, 27+4]},
-                        {"min": [37-4, 30-4, 26-4], "max": [37+4, 30+4, 26+4]}
+                    "colors": [
+                        (174, 119, 21),
+                        (178, 78, 21),
+                        (190, 40, 24),
+                        (251, 207, 63),
+                        (173, 44, 20),
+                        (112, 81, 76),
+                        (52, 38, 34),
+                        (51, 51, 51)
                     ]
                 },
                 2044: {
                     "name": "Blue",
-                    "style": "MAGIC", # The original Java code mapped 2044 (Blue) to P_FROM_MAGIC, indicating MAGIC.
-                    "rgb": [
-                        {"min": [11-4, 46-4, 56-4], "max": [11+4, 46+4, 56+4]}, # Example placeholder, requires tuning
-                        {"min": [12-4, 87-4, 87-4], "max": [28+4, 192+4, 160+4]},
-                        {"min": [96-4, 14-4, 149-4], "max": [118+4, 21+4, 185+4]},
-                        {"min": [96-4, 14-4, 149-4], "max": [96+4, 14+4, 149+4]},
-                        {"min": [12-4, 87-4, 87-4], "max": [12+4, 87+4, 87+4]}
+                    "style": "MAGIC",
+                    "colors": [
+                        (77, 77, 77),
+                        (80, 80, 80),
+                        (77, 77, 77),
+                        (80, 80, 80),
+                        (114, 31, 172),
+                        (83, 21, 148),
+                        (106, 24, 166),
+                        (111, 21, 156),
+                        (90, 18, 140),
+                        (67, 14, 120),
+                        (17, 140, 144),
+                        (0, 29, 29)
                     ]
                 },
             },

@@ -1,0 +1,70 @@
+{
+  "id": 12305,
+  "name": "Pink headband",
+  "resizeX": 128,
+  "resizeY": 128,
+  "resizeZ": 128,
+  "xan2d": 108,
+  "yan2d": 56,
+  "zan2d": 0,
+  "cost": 40,
+  "tradeable": true,
+  "stackable": false,
+  "inventoryModel": 3377,
+  "wearPos1": 0,
+  "wearPos2": 0,
+  "wearPos3": 0,
+  "members": true,
+  "colorFind": [
+    61,
+    41
+  ],
+  "colorReplace": [
+    -7220,
+    -7220
+  ],
+  "zoom2d": 380,
+  "xOffset2d": -1,
+  "yOffset2d": 0,
+  "ambient": 0,
+  "contrast": 0,
+  "options": [
+    null,
+    null,
+    "Take",
+    null,
+    null
+  ],
+  "interfaceOptions": [
+    null,
+    "Wear",
+    null,
+    null,
+    "Drop"
+  ],
+  "maleModel0": 201,
+  "maleModel1": -1,
+  "maleModel2": -1,
+  "maleOffset": 0,
+  "maleHeadModel": 43,
+  "maleHeadModel2": -1,
+  "femaleModel0": 376,
+  "femaleModel1": -1,
+  "femaleModel2": -1,
+  "femaleOffset": 0,
+  "femaleHeadModel": 101,
+  "femaleHeadModel2": -1,
+  "category": 0,
+  "notedID": 12306,
+  "notedTemplate": -1,
+  "team": 0,
+  "weight": 40,
+  "shiftClickDropIndex": -2,
+  "boughtId": -1,
+  "boughtTemplateId": -1,
+  "placeholderId": 15893,
+  "placeholderTemplateId": -1,
+  "params": {
+    "258": 4
+  }
+}

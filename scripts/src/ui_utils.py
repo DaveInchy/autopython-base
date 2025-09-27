@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import logging
 import random
 import time
 import pyautogui
@@ -23,10 +24,21 @@ def _load_ui_data():
         lines = [line for line in lines if not line.strip().startswith('//')]
         return json.loads(''.join(lines))
     except FileNotFoundError:
-        print(f"Error: UI data file not found at {jsonc_path}. Using empty data.")
+        logging.error(f"UI data file not found at {jsonc_path}. Using empty data.")
+        return {}
+    except json.JSONDecodeError as e:
+        logging.error(f"Error parsing UI data file: {e}. Using empty data.")
+        return {}
+    except Exception as e:
+        logging.error(f"Unexpected error loading UI data: {e}. Using empty data.")
         return {}
 
-_ui_data = _load_ui_data()
+_ui_data = _load_ui_data() # This now holds the entire parsed JSON content
+
+# --- Ensure UI_GRID_SPECS is always defined ---
+# This is the module-level variable that holds the UI grid specifications.
+# It's derived from _ui_data.
+UI_GRID_SPECS = _ui_data.get('grids', {}) # Assuming 'grids' is the top-level key for grid specs
 
 # --- Type Hinting ---
 EquipmentSlot = Literal['helm', 'cape', 'necklace', 'mainHand', 'body', 'offHand', 'legs', 'gloves', 'feet', 'ring', 'ammo']
@@ -34,7 +46,7 @@ Grid = Literal['inventory', 'prayer', 'magic', "magic_ancient"]
 
 # --- Generic Grid & Element Functions ---
 def _get_grid_slot_coords(grid_name: Grid, slot: int) -> tuple | None:
-    grid_data = _ui_data.get(grid_name.lower())
+    grid_data = _ui_data.get(grid_name.lower()) # Use _ui_data directly
     if not grid_data: return None
     if not (1 <= slot <= grid_data['slots']): raise ValueError(f"Slot must be between 1 and {grid_data['slots']} for {grid_name}")
     
@@ -86,19 +98,19 @@ class Equipment:
         return (slot_info['x'], slot_info['y']) if slot_info else None
 
 class Inventory:
-    _grid_data = _ui_data.get('inventory', {})
+    _grid_data = _ui_data.get('inventory', {}) # Use _ui_data directly
     @staticmethod
     def get_slot_coords(slot: int) -> tuple | None:
         return _get_grid_slot_coords('inventory', slot)
 
 class Prayer:
-    _grid_data = _ui_data.get('prayer', {})
+    _grid_data = _ui_data.get('prayer', {}) # Use _ui_data directly
     @staticmethod
     def get_slot_coords(slot: int) -> tuple | None:
         return _get_grid_slot_coords('prayer', slot)
 
 class Magic:
-    _grid_data = _ui_data.get('magic', {})
+    _grid_data = _ui_data.get('magic', {}) # Use _ui_data directly
     @staticmethod
     def get_slot_coords(slot: int) -> tuple | None:
         return _get_grid_slot_coords('magic', slot)
@@ -111,7 +123,7 @@ class HumanizedGridClicker:
         self.initial_std_dev_factor = initial_std_dev_factor
 
     def get_randomized_coords(self, grid_name: Grid, slot: int) -> tuple | None:
-        grid_data = _ui_data.get(grid_name)
+        grid_data = _ui_data.get(grid_name) # Use _ui_data directly
         if not grid_data: return None
         center_coords = _get_grid_slot_coords(grid_name, slot)
         if not center_coords: return None
@@ -129,7 +141,7 @@ class HumanizedGridClicker:
 
 # --- UI Interaction Class ---
 class UIInteraction:
-    def __init__(self, clicker: HumanizedGridClicker, overlay, client_window: RuneLiteClientWindow, templates_dir: str = '../res/image'):
+    def __init__(self, clicker: HumanizedGridClicker, overlay: WindowOverlay, client_window: RuneLiteClientWindow, templates_dir: str = '../res/image'):
         self.clicker = clicker
         self.overlay = overlay
         self.client_window = client_window
@@ -170,8 +182,65 @@ class UIInteraction:
     def click_inventory_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
         self._click_slot('inventory', slot, template_filename, use_image_recognition)
 
-    def click_prayer_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
-        self._click_slot('prayer', slot, template_filename, use_image_recognition)
+    def click_prayer_slot(self, slot_index: int):
+        self._click_slot("prayer", slot_index, None, False) # Assuming prayer_points is 'prayer' grid
+
+    @staticmethod
+    def get_inventory_slot_from_coords(x: int, y: int, client_rect: dict, ui_grid_specs: dict) -> int | None:
+        """Calculates the inventory slot index from absolute screen coordinates."""
+        inv_spec = ui_grid_specs.get("inventory")
+        if not inv_spec: return None
+
+        print(f"DEBUG: Client Rect: {client_rect}")
+        sys.stdout.flush()
+        print(f"DEBUG: Inventory Spec: {inv_spec}")
+        sys.stdout.flush()
+
+        # Calculate inventory region relative to client window
+        # Assuming x_offset and y_offset in inv_spec['region'] are from the bottom-right of the client
+        inv_region_width = inv_spec['region']['width']
+        inv_region_height = inv_spec['region']['height']
+        inv_offset_x = inv_spec['region']['x_offset']
+        inv_offset_y = inv_spec['region']['y_offset']
+
+        # Calculate the top-left corner of the inventory region relative to the client's top-left
+        inv_top_left_rel_x = client_rect['width'] - inv_region_width - inv_offset_x
+        inv_top_left_rel_y = client_rect['height'] - inv_region_height - inv_offset_y
+
+        print(f"DEBUG: Inventory Top-Left (relative to client): ({inv_top_left_rel_x}, {inv_top_left_rel_y})")
+        sys.stdout.flush()
+
+        # Convert absolute screen coords to coords relative to the inventory grid
+        # First, find the absolute screen coordinates of the inventory's top-left
+        abs_inv_top_left_x = client_rect['left'] + inv_top_left_rel_x
+        abs_inv_top_left_y = client_rect['top'] + inv_top_left_rel_y
+
+        print(f"DEBUG: Inventory Top-Left (absolute screen): ({abs_inv_top_left_x}, {abs_inv_top_left_y})")
+        sys.stdout.flush()
+        print(f"DEBUG: Click (absolute screen): ({x}, {y})")
+        sys.stdout.flush()
+
+        relative_x = x - abs_inv_top_left_x
+        relative_y = y - abs_inv_top_left_y
+
+        print(f"DEBUG: Click (relative to inventory top-left): ({relative_x}, {relative_y})")
+        sys.stdout.flush()
+
+        # Check if the click was within the inventory grid's boundaries
+        is_within_bounds = (0 <= relative_x < inv_region_width and 0 <= relative_y < inv_region_height)
+        print(f"DEBUG: Is within inventory bounds: {is_within_bounds}")
+        sys.stdout.flush()
+
+        if not is_within_bounds:
+            return None # Click was outside the inventory grid
+
+        col = relative_x // inv_spec['grid']['cell_size'][0]
+        row = relative_y // inv_spec['grid']['cell_size'][1]
+
+        slot_index = row * inv_spec['grid']['columns'] + col
+        print(f"DEBUG: Calculated slot index: {slot_index}")
+        sys.stdout.flush()
+        return slot_index if 0 <= slot_index < 28 else None
 
     def click_magic_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
         self._click_slot('magic', slot, template_filename, use_image_recognition)

@@ -1,0 +1,70 @@
+{
+  "id": 24304,
+  "name": "Spooky boots",
+  "resizeX": 128,
+  "resizeY": 128,
+  "resizeZ": 128,
+  "xan2d": 152,
+  "yan2d": 160,
+  "zan2d": 0,
+  "cost": 0,
+  "tradeable": false,
+  "stackable": false,
+  "inventoryModel": 2837,
+  "wearPos1": 10,
+  "wearPos2": 0,
+  "wearPos3": 0,
+  "members": false,
+  "colorFind": [
+    4626,
+    61
+  ],
+  "colorReplace": [
+    6331,
+    6331
+  ],
+  "zoom2d": 770,
+  "xOffset2d": 1,
+  "yOffset2d": -6,
+  "ambient": 0,
+  "contrast": 0,
+  "options": [
+    null,
+    null,
+    "Take",
+    null,
+    null
+  ],
+  "interfaceOptions": [
+    null,
+    null,
+    null,
+    null,
+    "Drop"
+  ],
+  "maleModel0": 185,
+  "maleModel1": -1,
+  "maleModel2": -1,
+  "maleOffset": 0,
+  "maleHeadModel": -1,
+  "maleHeadModel2": -1,
+  "femaleModel0": 361,
+  "femaleModel1": -1,
+  "femaleModel2": -1,
+  "femaleOffset": 0,
+  "femaleHeadModel": -1,
+  "femaleHeadModel2": -1,
+  "category": 15,
+  "notedID": -1,
+  "notedTemplate": -1,
+  "team": 0,
+  "weight": 100,
+  "shiftClickDropIndex": -2,
+  "boughtId": -1,
+  "boughtTemplateId": -1,
+  "placeholderId": -1,
+  "placeholderTemplateId": -1,
+  "params": {
+    "295": 1
+  }
+}

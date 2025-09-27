@@ -13,47 +13,52 @@ from src.client_window import RuneLiteClientWindow
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s, %(message)s')
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.WARNING)
 
 class WindowOverlay:
-    def __init__(self, title="Overlay", width=300, height=200, x=100, y=100, transparency=0.5):
-        self.client_window = RuneLiteClientWindow()
+    def __init__(self, title="Overlay", width=300, height=200, x=100, y=100, transparency=.2):
+        self.client_window = RuneLiteClientWindow() # Initialize client_window
         self.root = tk.Tk()
         self.root.title(title)
         self.root.geometry(f"{width}x{height}+{x}+{y}")
-        self.root.attributes("-topmost", True)
-        self.root.attributes("-transparentcolor", "white")
-        self.root.overrideredirect(True)
-        self.canvas = tk.Canvas(self.root, width=width, height=height, bg='white', highlightthickness=0)
-        self.canvas.pack()
-        self.transparency = transparency
+        self.root.overrideredirect(True) # Remove window decorations
+        self.root.attributes("-topmost", True) # Always on top
+        # self.root.attributes("-alpha", 1) # Set transparency
+
         self.width = width
         self.height = height
-        self.font_path = os.path.join(os.path.dirname(__file__), 'arial.otf')
-        if not os.path.exists(self.font_path):
+        self.transparency = transparency # Store transparency
+        self.text_color = (255, 255, 0) # Default text color
+        self.transparent_color = '#FF00FF' # Magenta for transparency
+        self.root.attributes("-transparentcolor", self.transparent_color)
+        
+        # Initialize font
+        self.font_path = os.path.join(os.path.dirname(__file__), '..', '..', 'res', 'font', 'OpenRS.ttf') # Corrected path to OpenRS font
+        try:
+            self.font = ImageFont.truetype(self.font_path, 16) # Default font size
+        except IOError:
             logger.warning(f"Font file not found at {self.font_path}. Using default font.")
-            self.font_path = None
-        self.font_size = 14
-        self.font = ImageFont.truetype(self.font_path, self.font_size) if self.font_path else ImageFont.load_default()
-        self.text_color = (0, 0, 0)
-        self.bg_color = (255, 255, 255)
-        self.image = Image.new("RGBA", (width, height), (255, 255, 255, 0))
-        self.draw = ImageDraw.Draw(self.image)
-        self.tk_image = ImageTk.PhotoImage(self.image)
-        self.canvas_image = self.canvas.create_image(0, 0, anchor='nw', image=self.tk_image)
-        self.canvas.image = self.tk_image
-        self.active_highlights = []
-        # update_overlay is now called externally in a loop
+            self.font = ImageFont.load_default()
+
+        self.canvas = tk.Canvas(self.root, width=self.width, height=self.height, highlightthickness=0.1)
+        self.canvas.pack(fill="both", expand=True)
+
+        # Initialize image and drawing context
+        self.image = Image.new('RGBA', (self.width, self.height), (255, 0, 255, 255)) # Initialize with magenta
+        self.draw = ImageDraw.Draw(self.image) # Initialize ImageDraw object
+        self.tk_image = ImageTk.PhotoImage(self.image, master=self.root)
+        self.image_on_canvas = self.canvas.create_image(0, 0, anchor="nw", image=self.tk_image)
+        self.canvas.image = self.tk_image # Keep a reference to prevent garbage collection
+
+        self.active_highlights = [] # List to store highlight rectangles
+        self.text_elements = [] # List to store text elements (not used in current update_overlay)
 
     def update_overlay(self):
         """
         Updates the overlay by redrawing all elements, including fading highlights.
         This method should be called continuously by a main loop.
         """
-        # 1. Clear the entire image buffer
-        self.draw.rectangle([(0, 0), (self.width, self.height)], fill=(255, 255, 255, 0))
-
-        # 2. Draw fading highlights
+        # 1. Draw fading highlights
         current_time = time.time()
         highlights_to_keep = []
         for h in self.active_highlights:
@@ -72,16 +77,18 @@ class WindowOverlay:
             
         self.active_highlights = highlights_to_keep
 
-        # 3. Update the Tkinter PhotoImage and canvas
-        self.tk_image = ImageTk.PhotoImage(self.image)
-        self.canvas.itemconfig(self.canvas_image, image=self.tk_image)
-        self.canvas.image = self.tk_image
+        # 2. Update the Tkinter PhotoImage and canvas
+        if self.image is None:
+            self.image = Image.new('RGBA', (self.width, self.height), (0, 0, 0, 0))
+
+        self.tk_image = ImageTk.PhotoImage(self.image, master=self.root)
+        self.canvas.itemconfig(self.image_on_canvas, image=self.tk_image)
         self.root.update_idletasks()
         self.root.update()
 
     def clear(self):
-        """Clears the overlay's internal drawing buffer. update_overlay must be called to reflect changes."""
-        self.draw.rectangle([(0, 0), (self.width, self.height)], fill=(255, 255, 255, 0))
+        """Clears the overlay to be fully transparent."""
+        self.draw.rectangle([(0, 0), (self.width, self.height)], fill=(255, 0, 255, 255)) # Fill with magenta
 
     def draw_text(self, text, position=(10, 10), font_size=None, color=None):
         """Draw text on the overlay's internal drawing buffer. update_overlay must be called to reflect changes."""
@@ -106,11 +113,28 @@ class WindowOverlay:
 
     def draw_image(self, image_path, position=(0, 0)):
         """Draw an image on the overlay's internal drawing buffer. update_overlay must be called to reflect changes."""
+        logger.info(f"Attempting to draw image: {image_path} at position {position}")
         if not os.path.exists(image_path):
             logger.error(f"Image file not found: {image_path}")
             return
-        img = Image.open(image_path).convert("RGBA")
-        self.image.paste(img, position, img)
+        try:
+            img = Image.open(image_path).convert("RGBA")
+            logger.info(f"Image loaded successfully. Mode: {img.mode}, Size: {img.size}")
+            self.image.paste(img, position, img)
+            logger.info(f"Image pasted onto overlay buffer.")
+        except Exception as e:
+            logger.error(f"Error loading or pasting image {image_path}: {e}")
+
+    def draw_pil_image(self, pil_image: Image.Image, position=(0, 0)):
+        """Draw a pre-loaded PIL Image object on the overlay's internal drawing buffer."""
+        if pil_image is None:
+            logger.warning("Attempted to draw a None PIL Image.")
+            return
+        try:
+            self.image.paste(pil_image, position, pil_image)
+            logger.info(f"PIL Image pasted onto overlay buffer at position {position}.")
+        except Exception as e:
+            logger.error(f"Error pasting PIL Image: {e}")
 
     def set_position(self, x, y):
         """Set the position of the overlay window."""
@@ -122,10 +146,10 @@ class WindowOverlay:
         self.height = height
         self.root.geometry(f"{width}x{height}")
         self.canvas.config(width=width, height=height)
-        self.image = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+        self.image = Image.new("RGBA", (width, height), (255, 0, 255, 255)) # Initialize with magenta
         self.draw = ImageDraw.Draw(self.image)
         self.tk_image = ImageTk.PhotoImage(self.image)
-        self.canvas.itemconfig(self.canvas_image, image=self.tk_image)
+        self.canvas.itemconfig(self.image_on_canvas, image=self.tk_image)
 
     def set_transparency(self, alpha):
         """Set the transparency of the overlay window."""
@@ -145,6 +169,18 @@ class WindowOverlay:
             'duration': duration,
             'start_time': time.time()
         })
+
+    def show_click(self, pos, duration=0.5, size=5, color_start=(0, 255, 0), color_end=(255, 0, 0)):
+        """
+        Renders a temporary, fading box to visualize a click.
+        pos: The (x, y) center of the click.
+        duration: How long the visualization lasts, in seconds.
+        size: The size of the square to draw.
+        """
+        half_size = size // 2
+        top_left = (pos[0] - half_size, pos[1] - half_size)
+        bottom_right = (pos[0] + half_size, pos[1] + half_size)
+        self.add_highlight(top_left, bottom_right, color_start, color_end, duration)
 
     def close(self):
         """Close the overlay window."""

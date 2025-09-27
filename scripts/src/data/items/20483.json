@@ -1,0 +1,68 @@
+{
+  "id": 20483,
+  "name": "Decorative sword (broken)",
+  "resizeX": 128,
+  "resizeY": 128,
+  "resizeZ": 128,
+  "xan2d": 224,
+  "yan2d": 408,
+  "zan2d": 0,
+  "cost": 1,
+  "tradeable": false,
+  "stackable": false,
+  "inventoryModel": 39637,
+  "wearPos1": 0,
+  "wearPos2": 0,
+  "wearPos3": 0,
+  "members": false,
+  "colorFind": [
+    -22429
+  ],
+  "colorReplace": [
+    -22481
+  ],
+  "zoom2d": 1530,
+  "xOffset2d": 6,
+  "yOffset2d": -49,
+  "ambient": -25,
+  "contrast": 0,
+  "options": [
+    null,
+    null,
+    "Take",
+    null,
+    null
+  ],
+  "interfaceOptions": [
+    null,
+    null,
+    null,
+    null,
+    "Drop"
+  ],
+  "maleModel0": -1,
+  "maleModel1": -1,
+  "maleModel2": -1,
+  "maleOffset": 0,
+  "maleHeadModel": -1,
+  "maleHeadModel2": -1,
+  "femaleModel0": -1,
+  "femaleModel1": -1,
+  "femaleModel2": -1,
+  "femaleOffset": 0,
+  "femaleHeadModel": -1,
+  "femaleHeadModel2": -1,
+  "category": 21,
+  "notedID": -1,
+  "notedTemplate": -1,
+  "team": 0,
+  "weight": 1587,
+  "shiftClickDropIndex": -2,
+  "boughtId": -1,
+  "boughtTemplateId": -1,
+  "placeholderId": 20484,
+  "placeholderTemplateId": -1,
+  "params": {
+    "295": 1
+  }
+}

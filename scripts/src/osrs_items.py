@@ -10,6 +10,7 @@ class OSRSItems:
     def __init__(self):
         self.items_db: Dict[str, Dict[str, Any]] = {}
         self.name_to_id: Dict[str, str] = {}
+        self.metadata_cache: Dict[int, Optional[Dict[str, Any]]] = {}
         self.db_path = os.path.join(os.path.dirname(__file__), 'data', 'items.json')
         self.last_update_path = os.path.join(os.path.dirname(__file__), 'data', 'last_update')
         self._load_or_fetch_database()
@@ -147,6 +148,29 @@ class OSRSItems:
             item for item in self.items_db.values()
             if item.get('stackable', False)
         ]
+
+    def get_item_metadata(self, item_id: int) -> Optional[Dict[str, Any]]:
+        """Get detailed item metadata from the local 'data/items/{id}.json' files."""
+        # Check cache first
+        if item_id in self.metadata_cache:
+            return self.metadata_cache[item_id]
+
+        # Construct file path
+        metadata_path = os.path.join(os.path.dirname(__file__), 'data', 'items', f'{item_id}.json')
+
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+                self.metadata_cache[item_id] = metadata # Cache the loaded data
+                return metadata
+        except FileNotFoundError:
+            self.metadata_cache[item_id] = None # Cache the miss
+            return None
+        except Exception as e:
+            logging.error(f"Error loading metadata for item {item_id}: {str(e)}")
+            self.metadata_cache[item_id] = None # Cache the miss
+            return None
+
 
 # Common OSRS item IDs
 class OSRSItemID:

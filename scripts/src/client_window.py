@@ -59,6 +59,32 @@ class RuneLiteClientWindow:
             'h': bottom - top,
         }
 
+    def get_client_rect(self) -> dict:
+        if not self.hwnd:
+            return None
+
+        # Get client area dimensions relative to the window.
+        client_left, client_top, client_right, client_bottom = win32gui.GetClientRect(self.hwnd)
+        # print(f"DEBUG: GetClientRect (relative): L={client_left}, T={client_top}, R={client_right}, B={client_bottom}")
+
+        # Convert the top-left point of the client area to screen coordinates.
+        point = (client_left, client_top)
+        abs_left, abs_top = win32gui.ClientToScreen(self.hwnd, point)
+        # print(f"DEBUG: ClientToScreen (absolute): L={abs_left}, T={abs_top}")
+
+        # The width and height are correct from GetClientRect.
+        width = client_right - client_left
+        height = client_bottom - client_top
+
+        return {
+            'left': abs_left,
+            'top': abs_top,
+            'right': abs_left + width,
+            'bottom': abs_top + height,
+            'w': width,
+            'h': height,
+        }
+
     def is_minimized(self):
         return win32gui.IsIconic(self.hwnd)
 

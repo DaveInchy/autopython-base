@@ -1,0 +1,73 @@
+{
+  "id": 27376,
+  "name": "Masori assembler (l)",
+  "resizeX": 128,
+  "resizeY": 128,
+  "resizeZ": 128,
+  "xan2d": 606,
+  "yan2d": 1138,
+  "zan2d": 1923,
+  "cost": 51000,
+  "tradeable": false,
+  "stackable": false,
+  "inventoryModel": 46525,
+  "wearPos1": 1,
+  "wearPos2": 0,
+  "wearPos3": 0,
+  "members": true,
+  "colorFind": [
+    -27483,
+    -27492,
+    -27500
+  ],
+  "colorReplace": [
+    -32746,
+    -32626,
+    -32630
+  ],
+  "zoom2d": 1104,
+  "xOffset2d": -4,
+  "yOffset2d": -4,
+  "ambient": 0,
+  "contrast": 0,
+  "options": [
+    null,
+    null,
+    "Take",
+    null,
+    null
+  ],
+  "interfaceOptions": [
+    null,
+    "Wear",
+    null,
+    "Commune",
+    "Drop"
+  ],
+  "maleModel0": 46502,
+  "maleModel1": -1,
+  "maleModel2": -1,
+  "maleOffset": 0,
+  "maleHeadModel": -1,
+  "maleHeadModel2": -1,
+  "femaleModel0": 46507,
+  "femaleModel1": -1,
+  "femaleModel2": -1,
+  "femaleOffset": 0,
+  "femaleHeadModel": -1,
+  "femaleHeadModel2": -1,
+  "category": 27,
+  "notedID": -1,
+  "notedTemplate": -1,
+  "team": 0,
+  "weight": 5896,
+  "shiftClickDropIndex": -2,
+  "boughtId": -1,
+  "boughtTemplateId": -1,
+  "placeholderId": -1,
+  "placeholderTemplateId": -1,
+  "params": {
+    "295": 1,
+    "451": "Commune"
+  }
+}

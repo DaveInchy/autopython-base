@@ -10,6 +10,10 @@ import sys
 import queue
 import signal
 from typing import Literal
+import os
+from PIL import Image # Import Image for type hinting
+from pynput import mouse # For click detection
+
 
 # pip packages/module
 import pyautogui # type: ignore
@@ -22,13 +26,87 @@ from src.ui_utils import HumanizedGridClicker, UIInteraction
 from src.runelite_api import RuneLiteAPI
 from src.hotkeys import HotkeyManager
 from src.osrs_items import OSRSItems
+from src.phase_tracker import RotationManager as ColorDataManager # For color data
+from src.ui_utils import UI_GRID_SPECS # For inventory slot detection
+
+# --- Globals for Click Detection ---
+CLICK_DETECTOR = None
+LISTENING_FOR_PHASE_CLICK = False
+AWAITING_MAGIC_XP_DROP = False
+PREVIOUS_MAGIC_XP = 0
+
+class ClickPhaseDetector:
+    def __init__(self):
+        self.listener = None
+        self.color_data_manager = ColorDataManager()
+        self.phase_colors = {p_info['style']: p_info['colors'] for _, p_info in self.color_data_manager._get_zulrah_rotations_data()['types'].items()}
+        self.tolerance = 20
+
+    def get_phase_from_color(self, clicked_color: tuple) -> str:
+        for phase, colors in self.phase_colors.items():
+            for color in colors:
+                if all(abs(int(clicked_color[i]) - color[i]) <= self.tolerance for i in range(3)):
+                    return phase
+        return None
+
+    def on_click(self, x, y, button, pressed):
+        global LISTENING_FOR_PHASE_CLICK, SCRIPT, PHASE_HANDLER, AWAITING_MAGIC_XP_DROP, combat_mode_active
+        if not pressed or button != mouse.Button.left:
+            return
+
+        # --- Teleport Click Detection (Entry Trigger) ---
+        if SCRIPT['state']['activated'] and not combat_mode_active and not AWAITING_MAGIC_XP_DROP:
+            client_rect = RuneLiteClientWindow().get_rect()
+            if client_rect:
+                # Approximate inventory area in the bottom right of the client
+                inv_x_min = client_rect['right'] - 250
+                inv_y_min = client_rect['bottom'] - 300
+                if x > inv_x_min and y > inv_y_min:
+                    print(f"Click detected in inventory area at ({x}, {y}).")
+                    # Click is in inventory area, check the item
+                    try:
+                        slot_index = UIInteraction.get_inventory_slot_from_coords(x, y, client_rect, UI_GRID_SPECS)
+                        print(f"Calculated inventory slot index: {slot_index}")
+                        if slot_index is not None:
+                            inventory = RuneLiteAPI().get_inventory()
+                            print(f"RuneLite API Inventory: {inventory}")
+                            if inventory and slot_index < len(inventory):
+                                item_id = inventory[slot_index].get('id')
+                                item_name = inventory[slot_index].get('name', 'Unknown')
+                                print(f"Clicked inventory slot {slot_index}, Item ID: {item_id}, Name: {item_name}")
+                                if item_id == 12938: # Zul-andra teleport
+                                    print("Zul-andra teleport clicked. Waiting for XP drop to start combat.")
+                                    AWAITING_MAGIC_XP_DROP = True
+                                    return # Exit to avoid processing as a phase click
+                            else:
+                                print(f"Inventory is empty or slot_index {slot_index} is out of bounds for inventory size {len(inventory) if inventory else 0}.")
+                        else:
+                            print("Click was not mapped to a valid inventory slot.")
+                    except Exception as e:
+                        print(f"Error checking for teleport click: {e}")
+        # --- End of Teleport Click Detection ---
+
+        if not LISTENING_FOR_PHASE_CLICK:
+            return
+
+    def start(self):
+        if self.listener is None:
+            self.listener = mouse.Listener(on_click=self.on_click)
+            self.listener.start()
+            print("Click phase detector started.")
+
+    def stop(self):
+        if self.listener is not None:
+            self.listener.stop()
+            self.listener = None
+            print("Click phase detector stopped.")
 
 
 combat_mode_active = False
 health, prayer = 99, 99
 
 SCRIPT={
-    "version": "1.6.1",
+    "version": "1.7",
     "title": "Zulrah Helper",
     "description": "A script that switches gear and prayers for Zulrah based on the current phase and what you have in your inventory",
     "tags": ["combat", "zulrah", "prayer", "gear"],
@@ -88,6 +166,8 @@ SCRIPT={
         "activated": False,
         "matched_rotation": 0,
         "next_phase_style": "UNKNOWN",
+        "phase_start_time": 0,
+        "current_phase_duration_ticks": 0,
     },
     "setup": [
         {
@@ -165,9 +245,18 @@ class RotationManager:
             return self.data["waves"][self.matched_rotation]
         return None
 
+    def reset(self):
+        """Resets the rotation tracking state."""
+        self.confirmed_phases = []
+        self.matched_rotation = 0
+        self.wave_counted = 0
+        print("RotationManager reset.")
+
     
-global PHASE_HANDLER
+global PHASE_HANDLER, CHATBOX_IMAGE, PHASE_IMAGE_CACHE
 PHASE_HANDLER: RotationManager = RotationManager()
+CHATBOX_IMAGE = None
+PHASE_IMAGE_CACHE = {}
 
 HOTKEY_START_FIGHT='.'
 
@@ -195,45 +284,95 @@ def get_weapon_style_from_slot_one(api: RuneLiteAPI, items_db: OSRSItems) -> str
         return "RANGE"
     return "UNKNOWN"
 
-def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAPI, items_db: OSRSItems):
-    global SCRIPT
-    _list_start = [18, 124]
-    _font_size = 16
-    _list = [
-        {"type": any, "name": "time", "display_name": "Time"},
-        {"type": Literal["RANGE", "MAGIC", "MELEE", "UNKNOWN"], "name": "Zulrah", "display_name": "Phase"},
-        {"type": str, "name": "next_phase_style", "display_name": "Next"},
-        {"type": int, "name": "manual_phase_index", "display_name": "Wave"},
-        {"type": Literal["RANGE", "MAGIC", "UNKNOWN"], "name": "player_style", "display_name": "Player Style"},
-        {"type": str | None, "name": "Warning", "display_name": "Warning"},
-    ]
+def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAPI, items_db: OSRSItems, chatbox_image: Image.Image | None):
+    global SCRIPT, combat_mode_active, LISTENING_FOR_PHASE_CLICK
+    chatbox_height = 165
+    _font_size = 20
+
+    if not SCRIPT['state']['activated']:
+        overlay.draw_rectangle((0, 0), (overlay.width - 1, overlay.height - 1), outline_color=(255, 0, 0), width=2)
+        overlay.draw_text("Overlay Inactive (Press '.' to activate)", position=(10, 5), color=(255, 255, 0), font_size=16)
+        if chatbox_image:
+            overlay.draw_pil_image(chatbox_image, position=(0, overlay.height - chatbox_height))
+        return
     
-    weapon = get_weapon_style_from_slot_one(api, items_db)
-    SCRIPT['state']["player_style"] = (weapon == "MAGIC" and "RANGE" or "MAGIC")
+    if not combat_mode_active:
+        overlay.draw_rectangle((0, 0), (overlay.width - 1, overlay.height - 1), outline_color=(255, 165, 0), width=2) # Orange border for waiting
+        overlay.draw_text("Waiting for Zul-andra teleport click...", position=(10, 5), color=(255, 165, 0), font_size=16)
+        if chatbox_image:
+            overlay.draw_pil_image(chatbox_image, position=(0, overlay.height - chatbox_height))
+        return
+    
+    if chatbox_image:
+        overlay.draw_pil_image(chatbox_image, position=(0, overlay.height - chatbox_height))
 
-    rotation = PHASE_HANDLER.fetch()
+    # --- New Rendering Logic ---
+    info_pos_x = 18
+    info_pos_y = overlay.height - chatbox_height + 10
 
-    lines=0
-    for i, item in enumerate(_list):
-        value = SCRIPT['state'].get(item['name'], '') 
-        display_name = item.get('display_name') or item['name'].replace("_", " ").capitalize()
+    # Display current rotation and wave
+    rotation_num = SCRIPT['state'].get('matched_rotation', 0)
+    wave_num = SCRIPT['state'].get('manual_phase_index', 0)
+    overlay.draw_text(f"Rotation: {rotation_num} | Wave: {wave_num}", position=(info_pos_x, info_pos_y), font_size=_font_size, color=(250, 250, 0))
 
-        if item['name'] == "time":
-            formatted = value and time.strftime("%M:%S", time.gmtime(value)) or "00.00"
-            overlay.draw_text(f"{display_name}: {formatted}", position=(_list_start[0], _list_start[1] + i * (_font_size+2)), font_size=_font_size, color=(250, 250, 0))
+    # Display Phase Cooldown Timer
+    phase_start_time = SCRIPT['state'].get('phase_start_time', 0)
+    phase_duration_ticks = SCRIPT['state'].get('current_phase_duration_ticks', 0)
+
+    if phase_start_time > 0 and phase_duration_ticks > 0:
+        phase_duration_sec = phase_duration_ticks * 0.6
+        elapsed_time = time.time() - phase_start_time
+        remaining_time = phase_duration_sec - elapsed_time
+
+        if remaining_time > 0:
+            overlay.draw_text(f"Next in: {remaining_time:.1f}s", position=(info_pos_x, info_pos_y + (_font_size + 5)), font_size=_font_size, color=(250, 250, 0))
         else:
-            overlay.draw_text(f"{display_name}: {value}", position=(_list_start[0], _list_start[1] + i * (_font_size+2)), font_size=_font_size, color=(250, 250, 0))
-        lines = i
+            overlay.draw_text("Next: NOW", position=(info_pos_x, info_pos_y + (_font_size + 5)), font_size=_font_size, color=(255, 0, 0))
 
-    if rotation:
-        jad_wave = rotation.get("jad")
-        ticks = rotation.get("ticks")
-        overlay.draw_text(f"Jad Wave: {jad_wave}", position=(_list_start[0], _list_start[1] + (lines + 2) * (_font_size+2)), font_size=_font_size, color=(0, 250, 0))
-        if SCRIPT['state']["manual_phase_index"] < len(ticks):
-            cooldown = ticks[SCRIPT['state']["manual_phase_index"]] * 0.6
-            formatted = time.strftime("%M:%S", time.gmtime(cooldown)) or "00.00"
-            if cooldown > 0:
-                overlay.draw_text(f"Next Phase in: {formatted}", position=(_list_start[0], _list_start[1] + (lines + 3) * (_font_size+2)), font_size=_font_size, color=(250, 250, 0))
+    # Display listening status
+    if LISTENING_FOR_PHASE_CLICK:
+        overlay.draw_text("Click Boss to Confirm Phase", position=(info_pos_x, info_pos_y + 2 * (_font_size + 5)), font_size=_font_size, color=(0, 255, 0))
+
+    # --- Render Phase Graphic ---
+    rotation_num = SCRIPT['state'].get('matched_rotation', 0)
+    wave_num = SCRIPT['state'].get('manual_phase_index', 0)
+
+    if rotation_num > 0 and wave_num > 0:
+        base_rotation_path = os.path.join(os.path.dirname(__file__), 'res', 'zulrah', f'rotation-{rotation_num}')
+        specific_image_path = os.path.join(base_rotation_path, f'wave_{wave_num:02d}.png')
+        default_image_path = os.path.join(base_rotation_path, 'wave_01.png')
+
+        phase_image = None
+
+        # 1. Check cache for the specific image
+        if specific_image_path in PHASE_IMAGE_CACHE:
+            if PHASE_IMAGE_CACHE[specific_image_path] != "not_found":
+                phase_image = PHASE_IMAGE_CACHE[specific_image_path]
+        else:
+            # 2. Try to load specific image and cache it
+            try:
+                phase_image = Image.open(specific_image_path).convert("RGBA")
+                PHASE_IMAGE_CACHE[specific_image_path] = phase_image
+            except FileNotFoundError:
+                PHASE_IMAGE_CACHE[specific_image_path] = "not_found"
+
+        # 3. If specific image failed, try the default (wave_01)
+        if phase_image is None:
+            if default_image_path in PHASE_IMAGE_CACHE:
+                if PHASE_IMAGE_CACHE[default_image_path] != "not_found":
+                    phase_image = PHASE_IMAGE_CACHE[default_image_path]
+            else:
+                try:
+                    phase_image = Image.open(default_image_path).convert("RGBA")
+                    PHASE_IMAGE_CACHE[default_image_path] = phase_image
+                except FileNotFoundError:
+                    PHASE_IMAGE_CACHE[default_image_path] = "not_found"
+
+        if phase_image:
+            image_pos_x = 10
+            image_pos_y = overlay.height - chatbox_height - phase_image.height - 10 # 10px padding
+            overlay.draw_pil_image(phase_image, position=(image_pos_x, image_pos_y))
+
     return
 
 def disable_user_mouse_input():
@@ -275,7 +414,7 @@ def equip_next_gear(humanizer: UIInteraction):
         humanizer.click_inventory_slot(slot)
     enable_user_mouse_input()
 
-def equip_gear(type: str):
+def equip_gear(target_type: str):
     global SCRIPT, CURRENT_EQUIPPED_STYLE
     original_pause = pyautogui.PAUSE
     pyautogui.PAUSE = SCRIPT['settings']['switch_speed']
@@ -286,40 +425,60 @@ def equip_gear(type: str):
         humanizer = UIInteraction(HumanizedGridClicker(), None, client)
         api = RuneLiteAPI()
         items_db = OSRSItems()
-        weapon = get_weapon_style_from_slot_one(api, items_db)
-        CURRENT_EQUIPPED_STYLE = (weapon == "MAGIC" and "RANGE" or "MAGIC")
-        SCRIPT['state']["phase"] = type
+        
+        current_weapon_style = get_weapon_style_from_slot_one(api, items_db)
+        CURRENT_EQUIPPED_STYLE = current_weapon_style == "MAGIC" and "RANGE" or "MAGIC" # Update global state
 
-        if type == "MAGIC":
+        SCRIPT['state']["phase"] = target_type # Update phase state
+
+        # --- Smart Switching Logic ---
+        if target_type == "MAGIC":
+            # Always equip magic prayer
             pyautogui.press('F4')
-            humanizer.click_prayer_slot(17)
-            if CURRENT_EQUIPPED_STYLE == "MAGIC":
+            humanizer.click_prayer_slot(17) # Protect from Magic
+            if CURRENT_EQUIPPED_STYLE != "RANGE":
+                # Switch to range gear
                 equip_next_gear(humanizer)
                 pyautogui.press('F4')
-                humanizer.click_prayer_slot(20)
-            pyautogui.press('F2')
-        elif type == "RANGE":
+                humanizer.click_prayer_slot(20) # Range Boost
+            pyautogui.press('F2') # Close prayers
+        elif target_type == "RANGE":
+            # Always equip range prayer
             pyautogui.press('F4')
-            humanizer.click_prayer_slot(18)
+            humanizer.click_prayer_slot(18) # Protect from Missiles
             if CURRENT_EQUIPPED_STYLE == "RANGE":
+                # Switch to range gear
                 equip_next_gear(humanizer)
                 pyautogui.press('F4')
-                humanizer.click_prayer_slot(21)
-            pyautogui.press('F2')
-        elif type == "MELEE":
-            if CURRENT_EQUIPPED_STYLE == "MAGIC":
+                humanizer.click_prayer_slot(21) # Magic Boost
+            pyautogui.press('F2') # Close prayers
+        elif target_type == "MELEE":
+            # For melee phase, if currently wearing range, switch to magic gear
+            # If currently wearing magic, switch to range gear
+            # This is based on the user's specific request for melee phase
+            # Open prayer book (no specific melee prayer for protection)
+            pyautogui.press('F4')
+            humanizer.click_prayer_slot(23)
+            humanizer.click_prayer_slot(23)
+            if CURRENT_EQUIPPED_STYLE == "RANGE":
+                # Switch to range gear
                 equip_next_gear(humanizer)
                 pyautogui.press('F4')
-                humanizer.click_prayer_slot(20)
-            pyautogui.press('F2')
+                humanizer.click_prayer_slot(21) # Magic Boost
+            pyautogui.press('F2') # Close prayers
+        
         pyautogui.moveTo(original_x, original_y)
+        # Open the window of opportunity for phase detection
+        global LISTENING_FOR_PHASE_CLICK
+        LISTENING_FOR_PHASE_CLICK = True
+        print("Ready for phase-defining click...")
     finally:
         pyautogui.PAUSE = original_pause
     return
 
-def equip_range(): equip_gear(type="RANGE")
-def equip_melee(): equip_gear(type="MELEE")
-def equip_mage(): equip_gear(type="MAGIC")
+def equip_range(): equip_gear(target_type="RANGE")
+def equip_mage(): equip_gear(target_type="MAGIC")
+def equip_melee(): equip_gear(target_type="MELEE")
 
 def get_async_hp_prayer(api: RuneLiteAPI, stop_event: threading.Event):
     global health, prayer
@@ -327,7 +486,7 @@ def get_async_hp_prayer(api: RuneLiteAPI, stop_event: threading.Event):
         while not stop_event.is_set():
             health = api.get_health_points()
             prayer = api.get_prayer_points()
-            time.sleep(0.2) # Polling interval
+            time.sleep(0.1) # Polling interval
     finally:
         print("HP/Prayer thread stopped")
 
@@ -367,23 +526,75 @@ def update(ui: UIInteraction, stop_event: threading.Event):
         SCRIPT['state']["Warning"] = "No PRAYER points left"
         panic_teleport(ui, stop_event)
 
+def assume_wave_one_is_range():
+    """Resets state and assumes the first wave is RANGE."""
+    print("Assuming Wave 1 is RANGE.")
+    if PHASE_HANDLER.update(phase="RANGE"):
+        SCRIPT['state']['phase'] = "RANGE"
+        SCRIPT['state']['manual_phase_index'] = PHASE_HANDLER.wave_counted
+        SCRIPT['state']['matched_rotation'] = PHASE_HANDLER.matched_rotation
+        next_phase_info = PHASE_HANDLER.fetch()
+        if next_phase_info:
+            # Start timer for the first phase
+            SCRIPT['state']['phase_start_time'] = time.time()
+            SCRIPT['state']['current_phase_duration_ticks'] = next_phase_info['ticks'][0]
+            SCRIPT['state']['next_phase_style'] = next_phase_info['phases'][1]
+
 def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
     client = RuneLiteClientWindow()
     ui = UIInteraction(HumanizedGridClicker(), None, client)
     api = RuneLiteAPI()
     
-    global SCRIPT, combat_mode_active
+    global SCRIPT, combat_mode_active, PHASE_HANDLER, AWAITING_MAGIC_XP_DROP
+    
+    if not AWAITING_MAGIC_XP_DROP:
+        # Script is being activated by the hotkey, not an XP drop
+        print("Script activated. Waiting for Zul-andra teleport click.")
+        SCRIPT['state']["activated"] = True # UI is active
+        combat_mode_active = False # Combat is NOT active yet
+        return # Don't start combat loop yet
+
+    # If we reach here, AWAITING_MAGIC_XP_DROP is True, so combat should start
     print("Combat mode enabled. Gear/prayer hotkeys are active.")
-    SCRIPT['state']["activated"] = True
-    SCRIPT['state']["Warning"] = ""
-    SCRIPT['state']["phase"] = "UNKNOWN"
-    SCRIPT['state']["player_style"] = "UNKNOWN"
-    SCRIPT['state']["start_time"] = time.time()
-    SCRIPT['state']["time"] = 0
+    
+    # Reset state for a new fight
+    PHASE_HANDLER.reset()
+    reset_combat_state()
+
+    # Assume Wave 1 is always RANGE
+    assume_wave_one_is_range()
+
+    SCRIPT['state']["activated"] = True # Combat UI is active
+
+    # --- State for Teleport Reset ---
+    previous_inventory = None
+    HOME_TELEPORT_IDS = [8013] # House Teleport tablet
+
+    def check_for_teleport_and_reset(current_inventory):
+        nonlocal previous_inventory
+        if previous_inventory is None:
+            previous_inventory = {f"{item['id']}_{i}": item['quantity'] for i, item in enumerate(current_inventory)}
+            return
+
+        current_inventory_map = {f"{item['id']}_{i}": item['quantity'] for i, item in enumerate(current_inventory)}
+
+        for item_key, prev_quantity in previous_inventory.items():
+            item_id = int(item_key.split('_')[0])
+            if item_id in HOME_TELEPORT_IDS:
+                curr_quantity = current_inventory_map.get(item_key, 0)
+                if curr_quantity < prev_quantity:
+                    print(f"Home teleport used (Item ID: {item_id}). Resetting rotation.")
+                    PHASE_HANDLER.reset()
+                    reset_combat_state()
+                    # After reset, re-assume wave 1 is range for the next fight
+                    assume_wave_one_is_range()
+                    break # Exit after finding one used teleport
+        
+        previous_inventory = current_inventory_map
 
     def run_combat_mode(stop_event: threading.Event, q: queue.Queue):
         global combat_mode_active
-        nonlocal client, ui, api
+        nonlocal client, ui, api, previous_inventory
         if combat_mode_active: return
 
         thread2 = threading.Thread(target=get_async_hp_prayer, args=(api,stop_event,))
@@ -393,11 +604,19 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
         combat_mode_active = True
         try:
             loop_interval = .1
+            last_click_time = time.time() # For testing show_click
             while not stop_event.is_set():
                 start_time = time.time()
+                
+                # Check for teleport reset
+                current_inventory = api.get_inventory()
+                if current_inventory:
+                    check_for_teleport_and_reset(current_inventory)
+
                 update(ui, stop_event)
                 SCRIPT['state']["time"] = (time.time() - SCRIPT['state']["start_time"])
                 q.put({'type': 'render', 'state': SCRIPT['state'], 'client_rect': client.get_rect()})
+
                 elapsed_time = time.time() - start_time
                 if elapsed_time < loop_interval:
                     time.sleep(loop_interval - elapsed_time)
@@ -572,45 +791,127 @@ if __name__ == "__main__":
 
     gui_queue = queue.Queue()
     client = RuneLiteClientWindow()
-    win_rect = client.get_rect()
-    if not win_rect: exit("RuneLite client not found. Exiting.")
+    client_area_rect = client.get_client_rect()
+    if not client_area_rect: exit("RuneLite client area not found. Exiting.")
         
-    overlay = WindowOverlay(title="Zulrah Overlay", width=win_rect["w"], height=win_rect['h'], x=win_rect['left'], y=win_rect['top'])
+    OVERLAY_OFFSET_X = 0
+    OVERLAY_OFFSET_Y = 0
+
+# ... (rest of the code)
+
+    overlay = WindowOverlay(
+        title="Zulrah Overlay",
+        width=client_area_rect["w"],
+        height=client_area_rect['h'],
+        x=client_area_rect['left'] + OVERLAY_OFFSET_X,
+        y=client_area_rect['top'] + OVERLAY_OFFSET_Y
+    )
     api = RuneLiteAPI()
     items_db = OSRSItems()
 
+    # Load chatbox image once
+    chatbox_image_path = os.path.join(os.path.dirname(__file__), 'res', 'chatbox.png')
+    try:
+        CHATBOX_IMAGE = Image.open(chatbox_image_path).convert("RGBA")
+        print(f"Chatbox image loaded successfully from {chatbox_image_path}")
+    except Exception as e:
+        print(f"Error loading chatbox image from {chatbox_image_path}: {e}")
+        CHATBOX_IMAGE = None
+
     def process_gui_queue():
+        global AWAITING_MAGIC_XP_DROP, PREVIOUS_MAGIC_XP, combat_mode_active
+
+        # --- XP Drop Detection Logic ---
+        if AWAITING_MAGIC_XP_DROP and not combat_mode_active:
+            try:
+                current_xp = api.get_skill_xp('magic')
+                if current_xp is not None:
+                    if PREVIOUS_MAGIC_XP == 0:
+                        PREVIOUS_MAGIC_XP = current_xp
+                    elif current_xp > PREVIOUS_MAGIC_XP:
+                        print("Magic XP drop detected! Starting combat mode.")
+                        AWAITING_MAGIC_XP_DROP = False
+                        PREVIOUS_MAGIC_XP = 0
+                        # This is where the combat mode is now started
+                        stop_event = threading.Event()
+                        enable_combat_mode(stop_event, gui_queue)
+                        combat_loop_manager.set_stop_event(stop_event)
+            except Exception as e:
+                print(f"Error checking XP: {e}")
+        # --- End of XP Drop Logic ---
+
         try:
-            message = gui_queue.get_nowait()
-            if message.get('type') == 'render':
-                SCRIPT['state'] = message.get('state')
-                client_rect = message.get('client_rect')
-                overlay.clear()
-                if client_rect:
-                    overlay.set_position(client_rect['left'], client_rect['top'])
-                    overlay.set_size(client_rect['w'], client_rect['h'])
-                    overlay.bring_to_foreground()
-                    render(client, overlay, api, items_db)
-                overlay.update_overlay()
-            elif message.get('type') == 'close':
-                overlay.root.quit()
-                return
+            # Process all available messages in the queue to update state
+            while not gui_queue.empty():
+                message = gui_queue.get_nowait()
+                if message.get('type') == 'render':
+                    # Just update the state, don't render yet
+                    SCRIPT['state'] = message.get('state')
+                elif message.get('type') == 'show_click':
+                    pos = message.get('pos')
+                    if pos:
+                        overlay.show_click(pos)
+                elif message.get('type') == 'close':
+                    overlay.root.quit()
+                    return
         except queue.Empty:
             pass
+
+        # --- Drawing logic (happens every frame) ---
+        client_area_rect = client.get_client_rect()
+        overlay.clear() # Clear canvas to transparent
+        if client_area_rect:
+            overlay.set_position(client_area_rect['left'] + OVERLAY_OFFSET_X, client_area_rect['top'] + OVERLAY_OFFSET_Y)
+            overlay.set_size(client_area_rect['w'], client_area_rect['h'])
+            overlay.bring_to_foreground()
+            # Render text based on the last known state
+            render(client, overlay, api, items_db, CHATBOX_IMAGE)
+        
+        # Always update the overlay to draw highlights and push to screen
+        overlay.update_overlay()
+        
+        # Reschedule the next frame
         overlay.root.after(10, process_gui_queue)
 
     combat_loop_manager = HotkeyManager(HOTKEY_START_FIGHT, f"ctrl+{HOTKEY_START_FIGHT}")
-    combat_loop_manager.register_hotkeys(lambda stop_event: enable_combat_mode(stop_event, gui_queue))
+
+    def toggle_script_activation(stop_event: threading.Event):
+        global SCRIPT, combat_mode_active, AWAITING_MAGIC_XP_DROP, PREVIOUS_MAGIC_XP
+        if SCRIPT['state']['activated']:
+            # Script is currently active, so deactivate it
+            print("Deactivating script.")
+            SCRIPT['state']['activated'] = False
+            combat_mode_active = False # Ensure combat mode is also off
+            AWAITING_MAGIC_XP_DROP = False # Reset XP waiting state
+            PREVIOUS_MAGIC_XP = 0 # Reset XP
+            overlay.root.withdraw() # Hide overlay
+            stop_event.set() # Signal combat loop to stop if running
+        else:
+            # Script is currently inactive, so activate it
+            print("Activating script. Waiting for Zul-andra teleport click.")
+            SCRIPT['state']['activated'] = True
+            overlay.root.deiconify() # Show overlay
+            # The combat_mode_active and AWAITING_MAGIC_XP_DROP remain False until teleport click and XP drop
+
+    combat_loop_manager.register_hotkeys(lambda stop_event: toggle_script_activation(stop_event))
 
     print("Press Ctrl+C in the console to exit.")
     
     def sigint_handler(sig, frame):
         print("\nInterrupted! Shutting down...")
-        overlay.root.destroy()
+        overlay.root.quit()
 
     signal.signal(signal.SIGINT, sigint_handler)
 
+    # Start the global click detector
+    CLICK_DETECTOR = ClickPhaseDetector()
+    CLICK_DETECTOR.start()
+
     overlay.root.after(10, process_gui_queue)
     overlay.root.mainloop()
+
+    # Stop the click detector on exit
+    if CLICK_DETECTOR:
+        CLICK_DETECTOR.stop()
 
     print("Script finished.")
