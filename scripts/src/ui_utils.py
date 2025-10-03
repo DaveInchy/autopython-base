@@ -114,26 +114,54 @@ class Magic:
 
 # --- Humanized Clicking Logic ---
 class HumanizedGridClicker:
-    def __init__(self, learning_rate=0.05, initial_std_dev_factor=0.25):
+    def __init__(self, learning_rate=0.05, initial_std_dev_factor=0.25, initial_missclick_chance=0.1, missclick_decay_rate=0.02):
         self.proficiency = {'inventory': 0, 'prayer': 0, 'magic': 0, 'magic_ancient': 0}
         self.learning_rate = learning_rate
         self.initial_std_dev_factor = initial_std_dev_factor
+        self.initial_missclick_chance = initial_missclick_chance
+        self.missclick_decay_rate = missclick_decay_rate
 
     def get_randomized_coords(self, grid_name: Grid, slot: int) -> tuple | None:
-        grid_data = _ui_data.get(grid_name) # Use _ui_data directly
+        grid_data = _ui_data.get(grid_name)
         if not grid_data: return None
         center_coords = _get_grid_slot_coords(grid_name, slot)
         if not center_coords: return None
+        
         center_x, center_y = center_coords
         cell_w, cell_h = grid_data['cellSize']['width'], grid_data['cellSize']['height']
+        
+        # Increment proficiency for the specific grid
         self.proficiency[grid_name] += 1
-        proficiency_factor = 1 + self.proficiency[grid_name] * self.learning_rate
-        std_dev_x = (cell_w * self.initial_std_dev_factor) / proficiency_factor
-        std_dev_y = (cell_h * self.initial_std_dev_factor) / proficiency_factor
-        rand_x, rand_y = random.gauss(center_x, std_dev_x), random.gauss(center_y, std_dev_y)
-        min_x, max_x = center_x - cell_w / 3, center_x + cell_w / 3
-        min_y, max_y = center_y - cell_h / 3, center_y + cell_h / 3
-        clamped_x, clamped_y = max(min_x, min(rand_x, max_x)), max(min_y, min(rand_y, max_y))
+        
+        # --- Miss-click Logic ---
+        # As proficiency increases, miss-click chance decreases
+        proficiency_factor_missclick = 1 + self.proficiency[grid_name] * self.missclick_decay_rate
+        current_missclick_chance = self.initial_missclick_chance / proficiency_factor_missclick
+        
+        if random.random() < current_missclick_chance:
+            # --- Miss-click: Click is less accurate ---
+            print(f"DEBUG: Simulating a miss-click for {grid_name} slot {slot}.")
+            # Wider standard deviation for a less accurate click
+            std_dev_x = cell_w * 0.6
+            std_dev_y = cell_h * 0.6
+            rand_x, rand_y = random.gauss(center_x, std_dev_x), random.gauss(center_y, std_dev_y)
+            # Clamp to a wider area to prevent clicking too far off
+            min_x, max_x = center_x - cell_w, center_x + cell_w
+            min_y, max_y = center_y - cell_h, center_y + cell_h
+        else:
+            # --- Accurate Click Logic ---
+            # As proficiency increases, standard deviation decreases, making clicks more accurate
+            proficiency_factor_accuracy = 1 + self.proficiency[grid_name] * self.learning_rate
+            std_dev_x = (cell_w * self.initial_std_dev_factor) / proficiency_factor_accuracy
+            std_dev_y = (cell_h * self.initial_std_dev_factor) / proficiency_factor_accuracy
+            rand_x, rand_y = random.gauss(center_x, std_dev_x), random.gauss(center_y, std_dev_y)
+            # Clamp to a tighter area within the cell
+            min_x, max_x = center_x - cell_w / 2.5, center_x + cell_w / 2.5
+            min_y, max_y = center_y - cell_h / 2.5, center_y + cell_h / 2.5
+
+        clamped_x = max(min_x, min(rand_x, max_x))
+        clamped_y = max(min_y, min(rand_y, max_y))
+        
         return (int(round(clamped_x)), int(round(clamped_y)))
 
 # --- UI Interaction Class ---
@@ -172,7 +200,7 @@ class UIInteraction:
         pyautogui.click(abs_click_coords[0], abs_click_coords[1])
         if self.overlay:
             self.overlay.add_highlight((abs_click_coords[0]-5, abs_click_coords[1]-5), (abs_click_coords[0]+5, abs_click_coords[1]+5), duration=0.5)
-        time.sleep(0.01)
+        time.sleep(random.uniform(0.01, 0.03))
 
     def _click_slot(self, grid_name: Grid, slot: int, template_filename: str | None, use_image_recognition: bool):
         abs_coords = None

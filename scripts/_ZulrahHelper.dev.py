@@ -9,6 +9,7 @@ import threading
 import sys
 import queue
 import signal
+import random
 from typing import Literal
 import os
 from PIL import Image # Import Image for type hinting
@@ -34,6 +35,11 @@ CLICK_DETECTOR = None
 LISTENING_FOR_PHASE_CLICK = False
 AWAITING_MAGIC_XP_DROP = False
 PREVIOUS_MAGIC_XP = 0
+
+LAST_ZULRAH_SWAP_SCREENSHOT = None
+
+MAGIC_GEAR_SET_IDS = []
+RANGE_GEAR_SET_IDS = []
 
 class ClickPhaseDetector:
     def __init__(self, client: RuneLiteClientWindow):
@@ -106,8 +112,11 @@ class ClickPhaseDetector:
         clicked_color = pyautogui.pixel(x, y)
         detected_phase = self.get_phase_from_color(clicked_color)
 
+        expected_phase = SCRIPT['state']['phase'] # Get expected phase for logging
+
+        print(f"[ClickPhaseDetector] Clicked at ({x}, {y}). Color: {clicked_color}. Detected phase: {detected_phase}. Expected phase: {expected_phase}.")
+
         if detected_phase:
-            expected_phase = SCRIPT['state']['phase']
             if detected_phase == expected_phase:
                 print(f"Correct phase detected and confirmed: {detected_phase}")
                 
@@ -461,17 +470,134 @@ def search_inventory(name="Shark") -> int | None:
             return 1 + index
     return None
 
-def equip_next_gear(humanizer: UIInteraction):
-    disable_user_mouse_input()
-    pyautogui.press('F2')
+    return 1 + index
+
+def get_item_display_name(item_id: int) -> str:
+    name = items_db.get_item_name(item_id)
+    return name if name is not None else f"ID: {item_id}"
+
+def establish_gear_sets():
+    global MAGIC_GEAR_SET_IDS, RANGE_GEAR_SET_IDS, SCRIPT
+    print("[ZulrahHelper] Establishing gear sets...")
+
+    # Assume currently equipped gear is MAGIC_GEAR_SET_IDS
+    equipped_items = api.get_equipment()
+    if equipped_items:
+        MAGIC_GEAR_SET_IDS = [item['id'] for item in equipped_items if item['id'] != -1]
+        print(f"[ZulrahHelper] Identified Magic Gear Set (equipped): {[get_item_display_name(item_id) for item_id in MAGIC_GEAR_SET_IDS]}")
+    else:
+        print("[ZulrahHelper] Could not retrieve equipped items to establish Magic Gear Set. Assuming empty.")
+        MAGIC_GEAR_SET_IDS = []
+
+    # Assume items in switch slots in inventory are RANGE_GEAR_SET_IDS
     num_switches = int(SCRIPT["settings"]["switch_count"])
-    slots_to_click = [1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21, 22, 25, 26][:num_switches]
-    for slot in slots_to_click:
+    switch_slots_indices = [s - 1 for s in [1, 2, 5, 6, 9, 10, 13, 14, 17, 18, 21, 22, 25, 26][:num_switches]]
+
+    inventory_items = api.get_inventory()
+    if inventory_items:
+        RANGE_GEAR_SET_IDS = []
+        for index in switch_slots_indices:
+            if index < len(inventory_items):
+                item_id = inventory_items[index].get('id')
+                if item_id != -1:
+                    RANGE_GEAR_SET_IDS.append(item_id)
+        print(f"[ZulrahHelper] Identified Range Gear Set (from inventory switch slots): {[get_item_display_name(item_id) for item_id in RANGE_GEAR_SET_IDS]}")
+    else:
+        print("[ZulrahHelper] Could not retrieve inventory items to establish Range Gear Set. Assuming empty.")
+        RANGE_GEAR_SET_IDS = []
+
+    if not MAGIC_GEAR_SET_IDS or not RANGE_GEAR_SET_IDS:
+        print("[ZulrahHelper] Warning: Could not fully establish both gear sets. Gear switching may not work correctly.")
+
+def switch_to_gear_set(humanizer: UIInteraction, target_gear_set_ids: list[int]):
+    disable_user_mouse_input()
+    pyautogui.press('F2') # Open inventory tab
+    time.sleep(random.uniform(0.08, 0.15)) # Wait for tab to open
+
+    # Get current equipped items and inventory
+    current_equipped = {item['id'] for item in api.get_equipment() if item['id'] != -1}
+    current_inventory = api.get_inventory()
+    
+    print(f"[ZulrahHelper] Switching to gear set: {[get_item_display_name(item_id) for item_id in target_gear_set_ids]}")
+    print(f"[ZulrahHelper] Currently equipped: {[get_item_display_name(item_id) for item_id in current_equipped]}")
+    
+    # Identify items to click from inventory
+    items_to_click_from_inv = []
+    for target_item_id in target_gear_set_ids:
+        if target_item_id not in current_equipped:
+            # Find item in inventory
+            found_in_inv = False
+            for i, inv_item in enumerate(current_inventory):
+                if inv_item['id'] == target_item_id:
+                    items_to_click_from_inv.append(i + 1) # 1-based slot index
+                    found_in_inv = True
+                    print(f"[ZulrahHelper] Found {get_item_display_name(target_item_id)} in inventory slot {i+1} for clicking.")
+                    break
+            if not found_in_inv:
+                print(f"[ZulrahHelper] Warning: {get_item_display_name(target_item_id)} needed but not found in inventory.")
+    
+    # Randomize click order
+    if random.choice([True, False]):
+        items_to_click_from_inv.reverse()
+
+    for slot in items_to_click_from_inv:
+        print(f"[ZulrahHelper] Clicking inventory slot {slot} to equip.")
         humanizer.click_inventory_slot(slot)
-    enable_user_mouse_input()
+        time.sleep(random.uniform(0.04, 0.08)) # Randomized click delay
+
+    # --- Verification and Correction ---
+    time.sleep(0.4) # Wait for game tick to update equipment
+
+    equipped_after_switch = {item['id'] for item in api.get_equipment() if item['id'] != -1}
+    print(f"[ZulrahHelper] Equipped after initial switch attempt: {[get_item_display_name(item_id) for item_id in equipped_after_switch]}")
+    
+    # Primary Check: Ensure all target items are equipped
+    missing_from_target = set(target_gear_set_ids) - equipped_after_switch
+    if missing_from_target:
+        print(f"[ZulrahHelper] Gear switch failed. Missing items: {[get_item_display_name(item_id) for item_id in missing_from_target]}. Retrying...")
+        
+        # Re-fetch inventory once for retry
+        current_inventory_list = api.get_inventory()
+        for missing_item_id in missing_from_target:
+            found_in_inv = False
+            for i, inv_item in enumerate(current_inventory_list):
+                if inv_item['id'] == missing_item_id:
+                    print(f"[ZulrahHelper] Re-clicking {get_item_display_name(missing_item_id)} in inventory slot {i+1}.")
+                    humanizer.click_inventory_slot(i + 1)
+                    time.sleep(random.uniform(0.04, 0.08))
+                    found_in_inv = True
+                    break
+            if not found_in_inv:
+                print(f"[ZulrahHelper] Error: {get_item_display_name(missing_item_id)} still missing and not found in inventory for retry.")
+        time.sleep(0.4) # Wait again after correction attempt
+        equipped_after_switch = {item['id'] for item in api.get_equipment() if item['id'] != -1} # Re-check
+        print(f"[ZulrahHelper] Equipped after primary correction: {[get_item_display_name(item_id) for item_id in equipped_after_switch]}")
+
+    # Secondary Check: Ensure no items from the *other* gear set are equipped
+    other_gear_set_ids = MAGIC_GEAR_SET_IDS if target_gear_set_ids == RANGE_GEAR_SET_IDS else RANGE_GEAR_SET_IDS
+    unexpectedly_equipped = equipped_after_switch.intersection(other_gear_set_ids)
+    if unexpectedly_equipped:
+        print(f"[ZulrahHelper] Correcting unexpected gear. Unequipped items: {[get_item_display_name(item_id) for item_id in unexpectedly_equipped]}. Retrying...")
+        
+        # Re-fetch inventory once for retry
+        current_inventory_list = api.get_inventory()
+        for unexpected_item_id in unexpectedly_equipped:
+            found_in_inv = False
+            for i, inv_item in enumerate(current_inventory_list):
+                if inv_item['id'] == unexpected_item_id:
+                    print(f"[ZulrahHelper] Clicking {get_item_display_name(unexpected_item_id)} in inventory slot {i+1} to unequip.")
+                    humanizer.click_inventory_slot(i + 1)
+                    time.sleep(random.uniform(0.04, 0.08))
+                    found_in_inv = True
+                    break
+            if not found_in_inv:
+                print(f"[ZulrahHelper] Error: {get_item_display_name(unexpected_item_id)} unexpectedly equipped but not found in inventory for unequip retry.")
+        time.sleep(0.4) # Wait again after correction attempt
+        equipped_after_switch = {item['id'] for item in api.get_equipment() if item['id'] != -1} # Re-check
+        print(f"[ZulrahHelper] Equipped after secondary correction: {[get_item_display_name(item_id) for item_id in equipped_after_switch]}")
 
 def equip_gear(target_type: str):
-    global SCRIPT, CURRENT_EQUIPPED_STYLE
+    global SCRIPT
     original_pause = pyautogui.PAUSE
     pyautogui.PAUSE = SCRIPT['settings']['switch_speed']
     try:
@@ -479,52 +605,38 @@ def equip_gear(target_type: str):
         client = RuneLiteClientWindow()
         client.bring_to_foreground()
         humanizer = UIInteraction(HumanizedGridClicker(), None, client)
-        api = RuneLiteAPI()
-        items_db = OSRSItems()
         
-        current_weapon_style = get_weapon_style_from_slot_one(api, items_db)
-        CURRENT_EQUIPPED_STYLE = current_weapon_style == "MAGIC" and "RANGE" or "MAGIC" # Update global state
-
-        SCRIPT['state']["phase"] = target_type # Update phase state
-
-        # --- Smart Switching Logic ---
+        # Determine which gear set to switch to
         if target_type == "MAGIC":
-            # Always equip magic prayer
+            target_gear_set = RANGE_GEAR_SET_IDS # For magic phase, equip range gear
+        elif target_type == "RANGE" or target_type == "MELEE":
+            target_gear_set = MAGIC_GEAR_SET_IDS # For range/melee phase, equip magic gear
+        else:
+            print(f"[ZulrahHelper] Unknown target type: {target_type}. No gear switch performed.")
+            return
+
+        # Perform the gear switch
+        switch_to_gear_set(humanizer, target_gear_set)
+
+        # Handle prayer switching (remains the same)
+        if target_type == "MAGIC":
             pyautogui.press('F4')
+            time.sleep(random.uniform(0.08, 0.15))
             humanizer.click_prayer_slot(17) # Protect from Magic
-            if CURRENT_EQUIPPED_STYLE != "RANGE":
-                # Switch to range gear
-                equip_next_gear(humanizer)
-                pyautogui.press('F4')
-                humanizer.click_prayer_slot(20) # Range Boost
             pyautogui.press('F2') # Close prayers
         elif target_type == "RANGE":
-            # Always equip range prayer
             pyautogui.press('F4')
+            time.sleep(random.uniform(0.08, 0.15))
             humanizer.click_prayer_slot(18) # Protect from Missiles
-            if CURRENT_EQUIPPED_STYLE == "RANGE":
-                # Switch to range gear
-                equip_next_gear(humanizer)
-                pyautogui.press('F4')
-                humanizer.click_prayer_slot(21) # Magic Boost
             pyautogui.press('F2') # Close prayers
         elif target_type == "MELEE":
-            # For melee phase, if currently wearing range, switch to magic gear
-            # If currently wearing magic, switch to range gear
-            # This is based on the user's specific request for melee phase
-            # Open prayer book (no specific melee prayer for protection)
             pyautogui.press('F4')
-            humanizer.click_prayer_slot(23)
-            humanizer.click_prayer_slot(23)
-            if CURRENT_EQUIPPED_STYLE == "RANGE":
-                # Switch to range gear
-                equip_next_gear(humanizer)
-                pyautogui.press('F4')
-                humanizer.click_prayer_slot(21) # Magic Boost
+            time.sleep(random.uniform(0.08, 0.15))
+            humanizer.click_prayer_slot(23) # Protect from Melee (or whatever is appropriate)
+            humanizer.click_prayer_slot(23) # Click again to turn off if already on
             pyautogui.press('F2') # Close prayers
         
         pyautogui.moveTo(original_x, original_y)
-        # Open the window of opportunity for phase detection
         global LISTENING_FOR_PHASE_CLICK
         LISTENING_FOR_PHASE_CLICK = True
         print("Ready for phase-defining click...")
@@ -548,8 +660,8 @@ def get_async_hp_prayer(api: RuneLiteAPI, stop_event: threading.Event):
 
 def update(ui: UIInteraction, stop_event: threading.Event):
     original_x, original_y = pyautogui.position()
-    MIN_HP=50
-    MIN_PRAY=10
+    min_hp_threshold = random.randint(45, 60)
+    min_pray_threshold = random.randint(8, 15)
     global SCRIPT, health, prayer
     
     if health is None or health == 0:
@@ -558,7 +670,7 @@ def update(ui: UIInteraction, stop_event: threading.Event):
         on_death(stop_event)
         return
 
-    if health <= MIN_HP:
+    if health <= min_hp_threshold:
         if is_on_cooldown('eat', 1.8):
             return
         SCRIPT['state']["Warning"] = "HEALTH is low"
@@ -569,7 +681,7 @@ def update(ui: UIInteraction, stop_event: threading.Event):
         pyautogui.moveTo(original_x, original_y)
         enable_user_mouse_input()
     
-    if prayer is not None and prayer <= MIN_PRAY:
+    if prayer is not None and prayer <= min_pray_threshold:
         SCRIPT['state']["Warning"] = "PRAYER is low"
         disable_user_mouse_input()
         ui.client_window.bring_to_foreground()
@@ -618,6 +730,9 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
     PHASE_HANDLER.reset()
     reset_combat_state()
 
+    # Establish gear sets
+    establish_gear_sets()
+
     # Assume Wave 1 is always RANGE
     assume_wave_one_is_range()
 
@@ -657,11 +772,26 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
 
         combat_mode_active = True
         try:
-            loop_interval = .1
+            loop_interval = random.uniform(0.09, 0.12)
             last_click_time = time.time() # For testing show_click
             while not stop_event.is_set():
                 start_time = time.time()
-                
+
+                # --- Automatic Phase Advancement ---
+                phase_start_time = SCRIPT['state'].get('phase_start_time', 0)
+                phase_duration_ticks = SCRIPT['state'].get('current_phase_duration_ticks', 0)
+
+                if phase_start_time > 0 and phase_duration_ticks > 0:
+                    phase_duration_sec = phase_duration_ticks * 0.6 # 0.6 seconds per tick
+                    phase_end_time = phase_start_time + phase_duration_sec
+
+                    if time.time() >= phase_end_time:
+                        print("[ZulrahHelper] Automatically advancing phase due to duration expiry.")
+                        confirm_phase() # Reuse existing logic to advance phase
+                        # Reset phase timer to prevent immediate re-trigger
+                        SCRIPT['state']['phase_start_time'] = 0
+                        SCRIPT['state']['current_phase_duration_ticks'] = 0
+
                 # Check for teleport reset
                 current_inventory = api.get_inventory()
                 if current_inventory:
@@ -754,8 +884,10 @@ def manual_blood_blitz():
         client.bring_to_foreground()
         humanizer = UIInteraction(HumanizedGridClicker(), None, client)
         pyautogui.press('F1')
+        time.sleep(random.uniform(0.08, 0.15))
         humanizer.click_magic_slot(SCRIPT["settings"]["manual_spell_slot"])
         pyautogui.press('F2')
+        time.sleep(random.uniform(0.08, 0.15))
         pyautogui.click(original_x, original_y)
     finally:
         pyautogui.PAUSE = original_pause
