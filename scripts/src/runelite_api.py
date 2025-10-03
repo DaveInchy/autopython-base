@@ -24,7 +24,7 @@ class RuneLiteAPI:
             })
             
         self._last_request_time = 0
-        self._request_delay = 0.6  # Minimum delay between requests to stay stealthy
+        self._request_delay = 0.05  # Minimum delay between requests
         
         # Initialize item database
         self.items_db = OSRSItems()

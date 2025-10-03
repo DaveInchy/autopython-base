@@ -18,6 +18,9 @@ class HotkeyManager:
         self.execution_thread = None
         self.loop_function = None
 
+    def set_stop_event(self, stop_event: threading.Event):
+        self.stop_event = stop_event
+
     def _start_loop(self):
         """Internal method to start the execution loop."""
         if self.execution_thread and self.execution_thread.is_alive():

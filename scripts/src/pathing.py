@@ -11,7 +11,7 @@ from typing import Dict, Any
 from .client_window import RuneLiteClientWindow
 from .game_screen import GameScreen
 from . import ui_utils
-from .graphics.window_overlay import WindowOverlay
+from .window_overlay import WindowOverlay
 
 class RoutePather:
     """

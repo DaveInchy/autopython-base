@@ -2,7 +2,7 @@ import threading
 import win32api
 import time
 from .client_window import RuneLiteClientWindow
-from .graphics.window_overlay import WindowOverlay
+from .window_overlay import WindowOverlay
 
 def render_zulrah_phase(overlay: WindowOverlay, stop_event: threading.Event):
     """

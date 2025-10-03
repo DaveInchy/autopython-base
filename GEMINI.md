@@ -232,3 +232,34 @@ To resolve this, we need to gather more information about your specific setup an
 
 4.  **Alternative Debugging (if needed):**
     If console prints remain elusive, we might need to resort to writing debug information to a temporary file to bypass any stdout redirection or buffering issues.
+
+# Current Session Summary: Zulrah Helper Overhaul & Debugging
+
+This session involved a deep dive into debugging and enhancing the `_ZulrahHelper.dev.py` script, focusing on fixing critical bugs, improving user feedback, and making the script more robust and user-friendly.
+
+## Key Features & Improvements:
+
+*   **Webhook Server:**
+    *   A new HTTP server (`scripts/src/http_server.py`) was created to listen for webhook events on `localhost:8080/webhook`. This allows external tools, like RuneLite plugins, to send JSON data to the script, which is then saved to timestamped files.
+
+*   **Critical Bug Fixes:**
+    *   **Import Errors:** Resolved numerous `ModuleNotFoundError` exceptions by correcting invalid import paths across multiple files (`_ZulrahHelper.dev.py`, `graphics.py`, `ui_utils.py`, etc.), which arose from a file structure refactoring.
+    *   **Inventory Click Detection:**
+        *   Addressed a `KeyError: 'region'` by making the UI data loading in `ui_utils.py` more flexible, allowing it to handle configurations with or without a top-level "grids" key.
+        *   Completely rewrote the `get_inventory_slot_from_coords` method to be more robust. Instead of relying on complex and error-prone reverse coordinate calculations, it now iterates through each inventory slot, calculates its known position, and checks if the click falls within its bounds.
+        *   Fixed a classic off-by-one error where the 1-based slot index was used to access the 0-indexed inventory list from the API.
+    *   **State Management:**
+        *   Fixed a race condition that prevented the script from entering combat mode after a teleport and subsequent XP drop.
+        *   Corrected the home teleport logic to ensure the script properly resets to the "waiting for teleport" state instead of deactivating completely.
+
+*   **Zulrah Phase Detection:**
+    *   **Click Detection Implemented:** The core logic to detect a Zulrah phase based on the color of a clicked pixel was implemented in the `on_click` handler, which was previously missing.
+    *   **Strict Detection:** The logic was enhanced to be "strict," meaning it will only confirm a phase if the detected color matches the *expected* phase for the current point in the rotation. This prevents accidental clicks from de-syncing the script.
+    *   **Color Data Refined:** Removed ambiguous gray colors from the `MAGIC` phase color data in `phase_tracker.py` to prevent incorrect phase identification.
+
+*   **Performance & UI:**
+    *   **Rate Limiting:** Significantly reduced the API request delay in `runelite_api.py` from 0.6s to 0.05s, eliminating "Loop took too long" warnings and improving responsiveness.
+    *   **Overlay Appearance:**
+        *   Fixed pink borders around overlay text and images by implementing an anti-aliasing fix (alpha thresholding) in `window_overlay.py`.
+        *   Adjusted the styling (font size, color, position) of various text elements on the overlay for better readability and consistency.
+        *   Resized and repositioned the Zulrah wave image to be smaller and centered within the right half of the chatbox area.

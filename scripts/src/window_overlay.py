@@ -8,7 +8,7 @@ import numpy as np
 import win32api
 
 # --- OSRS Macro SDK Imports ---
-from src.client_window import RuneLiteClientWindow
+from .client_window import RuneLiteClientWindow
 
 # --- Logging Configuration ---
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s, %(message)s')
@@ -33,7 +33,7 @@ class WindowOverlay:
         self.root.attributes("-transparentcolor", self.transparent_color)
         
         # Initialize font
-        self.font_path = os.path.join(os.path.dirname(__file__), '..', '..', 'res', 'font', 'OpenRS.ttf') # Corrected path to OpenRS font
+        self.font_path = os.path.join(os.path.dirname(__file__), '..', 'res', 'font', 'OpenRS.ttf') # Corrected path to OpenRS font
         try:
             self.font = ImageFont.truetype(self.font_path, 16) # Default font size
         except IOError:
@@ -102,7 +102,18 @@ class WindowOverlay:
         if len(color) == 3:
             color = color + (255,)
 
-        self.draw.text(position, text, font=font, fill=color)
+        # Create a temporary image to draw the text on, to handle anti-aliasing
+        txt_img = Image.new('RGBA', self.image.size, (0,0,0,0))
+        txt_draw = ImageDraw.Draw(txt_img)
+        txt_draw.text(position, text, font=font, fill=color)
+
+        # Threshold the alpha channel of the text to remove anti-aliasing
+        alpha = txt_img.getchannel('A')
+        thresholded_alpha = alpha.point(lambda p: 255 if p > 0 else 0)
+        txt_img.putalpha(thresholded_alpha)
+
+        # Paste the non-anti-aliased text onto the main image
+        self.image.paste(txt_img, (0,0), txt_img)
 
     def draw_rectangle(self, top_left, bottom_right, outline_color=(0, 0, 0), fill_color=None, width=1):
         """Draw a rectangle on the overlay's internal drawing buffer. update_overlay must be called to reflect changes."""
@@ -131,6 +142,13 @@ class WindowOverlay:
             logger.warning("Attempted to draw a None PIL Image.")
             return
         try:
+            # Threshold the alpha channel to remove anti-aliasing at the edges
+            if pil_image.mode == 'RGBA':
+                alpha = pil_image.getchannel('A')
+                # Threshold: pixels with alpha > 128 become fully opaque, others fully transparent
+                thresholded_alpha = alpha.point(lambda p: 255 if p > 128 else 0)
+                pil_image.putalpha(thresholded_alpha)
+
             self.image.paste(pil_image, position, pil_image)
             logger.info(f"PIL Image pasted onto overlay buffer at position {position}.")
         except Exception as e:
@@ -191,36 +209,3 @@ class WindowOverlay:
         self.root.lift()
         self.root.attributes("-topmost", True)
         self.root.after_idle(self.root.attributes, '-topmost', False)
-
-def DrawCursorPosition(overlay: WindowOverlay, stop_event: threading.Event, color=(251, 252, 253)):
-    """Thread function to continuously draw the mouse cursor position relative to the RuneLite client window (bottom-right origin)."""
-    # Ensure the overlay has a client window instance
-    client_window = overlay.client_window
-
-    overlay.bring_to_foreground()
-    
-    while not stop_event.is_set():
-        # Get absolute cursor position
-        cursor_x, cursor_y = win32api.GetCursorPos()
-        # Get client window position and size
-        win_rect = client_window.get_rect()
-        if not win_rect:
-            time.sleep(0.1)
-            continue
-        win_left, win_top, win_width, win_height = win_rect['left'], win_rect['top'], win_rect['w'], win_rect['h']
-
-        # Calculate cursor position relative to the client window (origin at bottom-right)
-        rel_x = (cursor_x - win_left)
-        rel_y = (cursor_y - win_top)
-        offset_x = win_width - rel_x
-        offset_y = win_height - rel_y
-
-        overlay.clear()
-        overlay.draw_text(
-            f"X {offset_x} Y {offset_y}",
-            position=(10, 40),
-            font_size=32,
-            color=color
-        )
-        overlay.update_overlay()
-        time.sleep(1/10)

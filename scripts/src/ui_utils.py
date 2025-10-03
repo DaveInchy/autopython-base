@@ -10,21 +10,18 @@ from typing import Literal
 # Add the project root to sys.path to allow for absolute imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.client_window import RuneLiteClientWindow
-from src.graphics.window_overlay import WindowOverlay
+from .client_window import RuneLiteClientWindow
+from .window_overlay import WindowOverlay
 
 # --- Data Loading ---
 def _load_ui_data():
-    """Loads the JSONC file, stripping comments first."""
-    jsonc_path = os.path.join(os.path.dirname(__file__), 'data', 'user-interface.jsonc')
+    """Loads the JSON file."""
+    json_path = os.path.join(os.path.dirname(__file__), 'data', 'user-interface.json')
     try:
-        with open(jsonc_path, 'r') as f:
-            lines = f.readlines()
-        # Strip comments
-        lines = [line for line in lines if not line.strip().startswith('//')]
-        return json.loads(''.join(lines))
+        with open(json_path, 'r') as f:
+            return json.load(f)
     except FileNotFoundError:
-        logging.error(f"UI data file not found at {jsonc_path}. Using empty data.")
+        logging.error(f"UI data file not found at {json_path}. Using empty data.")
         return {}
     except json.JSONDecodeError as e:
         logging.error(f"Error parsing UI data file: {e}. Using empty data.")
@@ -38,7 +35,7 @@ _ui_data = _load_ui_data() # This now holds the entire parsed JSON content
 # --- Ensure UI_GRID_SPECS is always defined ---
 # This is the module-level variable that holds the UI grid specifications.
 # It's derived from _ui_data.
-UI_GRID_SPECS = _ui_data.get('grids', {}) # Assuming 'grids' is the top-level key for grid specs
+UI_GRID_SPECS = _ui_data.get('grids', _ui_data) # Assuming 'grids' is the top-level key for grid specs
 
 # --- Type Hinting ---
 EquipmentSlot = Literal['helm', 'cape', 'necklace', 'mainHand', 'body', 'offHand', 'legs', 'gloves', 'feet', 'ring', 'ammo']
@@ -161,6 +158,15 @@ class UIInteraction:
         region = (win_rect['left'], win_rect['top'], win_rect['w'], win_rect['h'])
         return find_ui_element_by_image(template_path, region=region)
 
+    def _get_relative_coords(self, absolute_coords: tuple) -> tuple | None:
+        """Converts absolute screen coordinates to coordinates relative to the bottom-right of the client window."""
+        win_rect = self.client_window.get_rect()
+        if not win_rect: return None
+        # "up is positive and left is positive"
+        relative_x = win_rect['right'] - absolute_coords[0]
+        relative_y = win_rect['bottom'] - absolute_coords[1]
+        return (relative_x, relative_y)
+
     def _perform_click(self, abs_click_coords: tuple):
         if not abs_click_coords: return
         pyautogui.click(abs_click_coords[0], abs_click_coords[1])
@@ -176,7 +182,10 @@ class UIInteraction:
                 print(f"Warning: Template '{template_filename}' not found for {grid_name} slot {slot}. Falling back to coordinate-based click.")
         if not abs_coords:
             rand_coords = self.clicker.get_randomized_coords(grid_name, slot)
-            abs_coords = self._get_abs_coords(rand_coords)
+            if rand_coords:
+                abs_coords = self._get_abs_coords(rand_coords)
+            else:
+                print(f"Warning: Could not get coordinates for {grid_name} slot {slot}.")
         self._perform_click(abs_coords)
 
     def click_inventory_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
@@ -185,62 +194,46 @@ class UIInteraction:
     def click_prayer_slot(self, slot_index: int):
         self._click_slot("prayer", slot_index, None, False) # Assuming prayer_points is 'prayer' grid
 
-    @staticmethod
-    def get_inventory_slot_from_coords(x: int, y: int, client_rect: dict, ui_grid_specs: dict) -> int | None:
-        """Calculates the inventory slot index from absolute screen coordinates."""
-        inv_spec = ui_grid_specs.get("inventory")
-        if not inv_spec: return None
+    def get_inventory_slot_from_coords(self, x: int, y: int) -> int | None:
+        """Calculates the inventory slot index from absolute screen coordinates by checking each slot."""
+        inv_spec = _ui_data.get("inventory")
+        if not inv_spec:
+            print("DEBUG: 'inventory' not found in _ui_data.")
+            sys.stdout.flush()
+            return None
 
-        print(f"DEBUG: Client Rect: {client_rect}")
+        try:
+            cell_w = inv_spec['cellSize']['width']
+            cell_h = inv_spec['cellSize']['height']
+        except KeyError as e:
+            print(f"DEBUG: Missing key in inv_spec: {e}")
+            sys.stdout.flush()
+            return None
+
+        for slot in range(1, 29): # 1 to 28
+            relative_coords = Inventory.get_slot_coords(slot)
+            if not relative_coords:
+                continue
+
+            abs_center = self._get_abs_coords(relative_coords)
+            if not abs_center:
+                continue
+
+            abs_x, abs_y = abs_center
+            
+            # Define the bounding box of the cell
+            half_w = cell_w / 2
+            half_h = cell_h / 2
+            
+            if (abs_x - half_w <= x <= abs_x + half_w) and \
+               (abs_y - half_h <= y <= abs_y + half_h):
+                print(f"DEBUG: Click ({x}, {y}) matched slot {slot} at {abs_center}")
+                sys.stdout.flush()
+                return slot
+
+        print(f"DEBUG: Click ({x}, {y}) did not match any inventory slot.")
         sys.stdout.flush()
-        print(f"DEBUG: Inventory Spec: {inv_spec}")
-        sys.stdout.flush()
-
-        # Calculate inventory region relative to client window
-        # Assuming x_offset and y_offset in inv_spec['region'] are from the bottom-right of the client
-        inv_region_width = inv_spec['region']['width']
-        inv_region_height = inv_spec['region']['height']
-        inv_offset_x = inv_spec['region']['x_offset']
-        inv_offset_y = inv_spec['region']['y_offset']
-
-        # Calculate the top-left corner of the inventory region relative to the client's top-left
-        inv_top_left_rel_x = client_rect['width'] - inv_region_width - inv_offset_x
-        inv_top_left_rel_y = client_rect['height'] - inv_region_height - inv_offset_y
-
-        print(f"DEBUG: Inventory Top-Left (relative to client): ({inv_top_left_rel_x}, {inv_top_left_rel_y})")
-        sys.stdout.flush()
-
-        # Convert absolute screen coords to coords relative to the inventory grid
-        # First, find the absolute screen coordinates of the inventory's top-left
-        abs_inv_top_left_x = client_rect['left'] + inv_top_left_rel_x
-        abs_inv_top_left_y = client_rect['top'] + inv_top_left_rel_y
-
-        print(f"DEBUG: Inventory Top-Left (absolute screen): ({abs_inv_top_left_x}, {abs_inv_top_left_y})")
-        sys.stdout.flush()
-        print(f"DEBUG: Click (absolute screen): ({x}, {y})")
-        sys.stdout.flush()
-
-        relative_x = x - abs_inv_top_left_x
-        relative_y = y - abs_inv_top_left_y
-
-        print(f"DEBUG: Click (relative to inventory top-left): ({relative_x}, {relative_y})")
-        sys.stdout.flush()
-
-        # Check if the click was within the inventory grid's boundaries
-        is_within_bounds = (0 <= relative_x < inv_region_width and 0 <= relative_y < inv_region_height)
-        print(f"DEBUG: Is within inventory bounds: {is_within_bounds}")
-        sys.stdout.flush()
-
-        if not is_within_bounds:
-            return None # Click was outside the inventory grid
-
-        col = relative_x // inv_spec['grid']['cell_size'][0]
-        row = relative_y // inv_spec['grid']['cell_size'][1]
-
-        slot_index = row * inv_spec['grid']['columns'] + col
-        print(f"DEBUG: Calculated slot index: {slot_index}")
-        sys.stdout.flush()
-        return slot_index if 0 <= slot_index < 28 else None
+        return None
 
     def click_magic_slot(self, slot: int, template_filename: str | None = None, use_image_recognition: bool = False):
         self._click_slot('magic', slot, template_filename, use_image_recognition)

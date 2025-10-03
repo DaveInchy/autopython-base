@@ -17,7 +17,7 @@ import keyboard # For scoped hotkeys
 
 # --- OSRS Macro SDK Imports ---
 from src import game_screen
-from src.graphics.window_overlay import WindowOverlay, DrawCursorPosition
+from src.window_overlay import WindowOverlay
 from src.client_window import RuneLiteClientWindow
 from src.ui_utils import HumanizedGridClicker, Inventory as ResizableInventoryGrid, Prayer as ResizablePrayerGrid, UIInteraction
 from src.runelite_api import RuneLiteAPI
