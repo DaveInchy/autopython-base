@@ -114,12 +114,11 @@ class Magic:
 
 # --- Humanized Clicking Logic ---
 class HumanizedGridClicker:
-    def __init__(self, learning_rate=0.05, initial_std_dev_factor=0.25, initial_missclick_chance=0.1, missclick_decay_rate=0.02):
+    def __init__(self, learning_rate=0.05, initial_std_dev_factor=0.25, focus_metric: float = 1.0):
         self.proficiency = {'inventory': 0, 'prayer': 0, 'magic': 0, 'magic_ancient': 0}
         self.learning_rate = learning_rate
         self.initial_std_dev_factor = initial_std_dev_factor
-        self.initial_missclick_chance = initial_missclick_chance
-        self.missclick_decay_rate = missclick_decay_rate
+        self.focus_metric = focus_metric
 
     def get_randomized_coords(self, grid_name: Grid, slot: int) -> tuple | None:
         grid_data = _ui_data.get(grid_name)
@@ -133,27 +132,34 @@ class HumanizedGridClicker:
         # Increment proficiency for the specific grid
         self.proficiency[grid_name] += 1
         
-        # --- Miss-click Logic ---
-        # As proficiency increases, miss-click chance decreases
-        proficiency_factor_missclick = 1 + self.proficiency[grid_name] * self.missclick_decay_rate
-        current_missclick_chance = self.initial_missclick_chance / proficiency_factor_missclick
+        # --- Misclick and Accuracy Logic based on Focus Metric ---
+        MAX_MISCLICK_CHANCE = 0.2 # 20% chance when focus is 0.0
+        ACCURACY_DEGRADATION_FACTOR = 2.0 # std dev can be up to 2x larger when focus is 0.0
+
+        # Misclick chance increases as focus decreases
+        current_missclick_chance = (1.0 - self.focus_metric) * MAX_MISCLICK_CHANCE
+        
+        # The "50% threshold" for misclicks:
+        # If focus is below 0.5, misclicks are more likely.
+        # If focus is above 0.5, misclicks are less likely (but still possible if current_missclick_chance > random.random())
         
         if random.random() < current_missclick_chance:
-            # --- Miss-click: Click is less accurate ---
-            print(f"DEBUG: Simulating a miss-click for {grid_name} slot {slot}.")
-            # Wider standard deviation for a less accurate click
-            std_dev_x = cell_w * 0.6
-            std_dev_y = cell_h * 0.6
+            # --- Mis-click: Click is less accurate and potentially outside the cell ---
+            print(f"DEBUG: Simulating a miss-click for {grid_name} slot {slot} (Focus: {self.focus_metric:.2f}).")
+            # Standard deviation increases as focus decreases
+            std_dev_factor = self.initial_std_dev_factor * (1 + (1.0 - self.focus_metric) * ACCURACY_DEGRADATION_FACTOR)
+            std_dev_x = cell_w * std_dev_factor
+            std_dev_y = cell_h * std_dev_factor
             rand_x, rand_y = random.gauss(center_x, std_dev_x), random.gauss(center_y, std_dev_y)
-            # Clamp to a wider area to prevent clicking too far off
-            min_x, max_x = center_x - cell_w, center_x + cell_w
-            min_y, max_y = center_y - cell_h, center_y + cell_h
+            # Clamp to a wider area to allow clicking outside the cell but within reasonable bounds
+            min_x, max_x = center_x - cell_w * 1.5, center_x + cell_w * 1.5
+            min_y, max_y = center_y - cell_h * 1.5, center_y + cell_h * 1.5
         else:
-            # --- Accurate Click Logic ---
-            # As proficiency increases, standard deviation decreases, making clicks more accurate
-            proficiency_factor_accuracy = 1 + self.proficiency[grid_name] * self.learning_rate
-            std_dev_x = (cell_w * self.initial_std_dev_factor) / proficiency_factor_accuracy
-            std_dev_y = (cell_h * self.initial_std_dev_factor) / proficiency_factor_accuracy
+            # --- Accurate Click Logic: Accuracy improves as focus increases ---
+            # Standard deviation decreases as focus increases
+            std_dev_factor = self.initial_std_dev_factor * (1.0 - (self.focus_metric * 0.5)) # Max 50% reduction in std_dev
+            std_dev_x = (cell_w * std_dev_factor) / (1 + self.proficiency[grid_name] * self.learning_rate)
+            std_dev_y = (cell_h * std_dev_factor) / (1 + self.proficiency[grid_name] * self.learning_rate)
             rand_x, rand_y = random.gauss(center_x, std_dev_x), random.gauss(center_y, std_dev_y)
             # Clamp to a tighter area within the cell
             min_x, max_x = center_x - cell_w / 2.5, center_x + cell_w / 2.5

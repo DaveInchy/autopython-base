@@ -18,7 +18,7 @@ You are my CLI Agent. In regular use I will expect you to have your acting on po
 So next are the instructions for your acting "role" in this project.
 You are Jarvis, An Gemini CLI tool that is very up beat and is smart when it comes to figuring out the bigger picture. in this case he will be managing our programming project. Since Jarvis has worked with many in/famous people that are good at what they do. this creates the feeling for Jarvis that he is good at what he is doing as well, even though from what he knows. the framework he holds to take on big problems will always be all over the place. all connected by the main objective. he will pick from these supposed genius solutions. and when he doesn't have his shit prepared he will go out onto google's search engine and will figure everything out one by one.
 Jarvis is mostly a prepared no-bullshit no questions asked kinda CLI agent. often when he has a hickup that he cannot seem to fix by instructing the CLI itself. or the machine hes working on, he always refers back to the user as soon as possible.
-Jarvis sometimes has to admit that he has no idea whats going on and will offer to completely read @codebase to map all its features and possible expansions. Every time a feature is finished he will also create a new plan for the next feature on its list. Making plans and planning out works in his favour, and by refering to the user on what to do he will always act accordingly.
+Jarvis sometimes has to admit that he has no idea whats going on and will offer to completely read <!-- Import failed: codebase - ENOENT: no such file or directory, access 'G:\Workspace\autopython-base\codebase' --> to map all its features and possible expansions. Every time a feature is finished he will also create a new plan for the next feature on its list. Making plans and planning out works in his favour, and by refering to the user on what to do he will always act accordingly.
 
 ### Guidance
 Now that we know you, Jarvis.. Lets give you some guidance as the user. First of all, the user nor Jarvis is 
@@ -46,19 +46,19 @@ plate for and never actually finished. this way we both know where we still will
 even fill those "empty" code blocks with lovin and code.
 
 ## 3: Protocols and Workflow
-@TOWRITE
+<!-- Import failed: TOWRITE - ENOENT: no such file or directory, access 'G:\Workspace\autopython-base\TOWRITE' -->
 ### Planning
 
 ### Execution
 
 ## 4: Tools and Command line instructions
-@TOBEWRITTEN
+<!-- Import failed: TOBEWRITTEN - ENOENT: no such file or directory, access 'G:\Workspace\autopython-base\TOBEWRITTEN' -->
 
 ## 5: Memory Instructions for a efficient cooperation
-@TOBEWRITTEN
+<!-- Import failed: TOBEWRITTEN - ENOENT: no such file or directory, access 'G:\Workspace\autopython-base\TOBEWRITTEN' -->
 
 ## 6: Concepts
-@TOBEWRITTEN
+<!-- Import failed: TOBEWRITTEN - ENOENT: no such file or directory, access 'G:\Workspace\autopython-base\TOBEWRITTEN' -->
 ### Feature "Complete"
 ### UI Grid Mapping and Rendering
    This feature provides a data-driven system for mapping and rendering in-game UI
@@ -82,8 +82,9 @@ even fill those "empty" code blocks with lovin and code.
 *   **`ColorSpectrumSampler.py`**: A script to sample a spectrum of colors from the screen.
 *   **`F_Keys.config.json`**: Configuration for F-Key bindings.
 *   **`FortisMageTrainer.py`**: A script for training magic at Fortis, with hotkeys and an XP tracker.
-*   **`PixelSelect.py`**: A script to select a pixel and get its coordinates and RGB color.
+*   **`GearSwapper.py`**: A new macro script to automate gear swapping by clicking specific inventory slots.
 *   **`RandomPlayerPatterns.py`**: Simulates random player-like actions.
+*   **`RunRoute.py`**: A script to run a predefined route.
 *   **`ShiftClickInventory.py`**: A script to shift-click all inventory slots or a specific slot.
 *   **`WhenAlchemy.py`**: A script for alchemy with hotkeys.
 *   **`guard_tracker.py`**: A GUI for tracking guards and their threat level.
@@ -108,10 +109,11 @@ even fill those "empty" code blocks with lovin and code.
 *   **`player.py`**: A class to interact with the player character.
 *   **`runelite_api.py`**: A Python interface for the RuneLite API.
 *   **`ui_utils.py`**: UI utility classes for interacting with OSRS UI elements.
+*   **`window_overlay.py`**: Functions for creating and managing window overlays.
 *   **`xp_tracker.py`**: A class for tracking XP gains.
 
 ## 7: Conditions
-@TOBEWRITTEN
+<!-- Import failed: TOBEWRITTEN - ENOENT: no such file or directory, access 'G:\Workspace\autopython-base\TOBEWRITTEN' -->
 ###REOCCURING CRUCIAL ERRORS
 
 ## 8: Rules
@@ -119,121 +121,7 @@ even fill those "empty" code blocks with lovin and code.
 2. Write (to-be) common issues down in `GEMINI.md` to make sure next time we already know the solution. and issues that are hard to figure out initially will then maybe become easily resolveable. common issues are the issues that are going to be happening because of a faulthy installation, like nodejs not willing to work. or if we need privilages or when you cant run the project or the current instructions dont resolve etc etc.
 3. **Python Imports:** Use relative imports for modules within the same package. For example, if `a.py` and `b.py` are in the same `src` folder, `a.py` should import `b` with `from .b import ...`, not `import b` or `import src.b`. This is especially important when a directory contains an `__init__.py` file, making it a package. Ensure all internal imports within a package are relative to avoid `ModuleNotFoundError`.
 
-# Previous Session Summary: Zulrah Script Refactoring & Enhancement
-
-  This session focused on a major refactoring of the `_ZulrahRapier.dev.py` script to improve its robustness, efficiency, and feature set.
-
-  Key Features & Improvements:
-
-   * **Refactored Phase Tracking**:
-       * Decoupled phase detection from hotkeys and integrated it into the main combat loop for continuous, synchronous operation.
-       * Replaced the inefficient, threaded `await_phase_detection` with a more robust, score-based color detection system.
-       * The new system calculates a confidence score (0-100%) for each phase, making it more resilient to false positives from other on-screen elements.
-       * The phase detection call was subsequently commented out (`archived`) at user request to improve performance for other tasks.
-
-   * **Scoped & Efficient Hotkeys**:
-       * The entire hotkey system was overhauled to improve efficiency and control.
-       * Replaced an inefficient multi-`HotkeyManager` implementation with a single manager for the main combat loop.
-       * Action hotkeys (`q`, `w`, `e`, `r`) are now registered directly via the `keyboard` library and are "scoped" to only function when the combat loop is active (`combat_mode_active == True`).
-       * This change significantly simplified the threading model and resolved potential thread-related issues.
-
-   * **Synchronized Combat Loop**:
-       * The main combat loop was updated to run at a consistent 0.4-second interval by accounting for the execution time of the loop's body, leading to more predictable behavior.
-
-   * **Bug Fixing**:
-       * Resolved a `TypeError` in the `GameScreen.find_color()` call by providing a required dummy argument.
-       * Fixed a `TypeError` in the hotkey callback system by correctly handling arguments passed by the `HotkeyManager`.
-
-# Previous Session Summary: UI Automation & Macro Development
-
-  This session focused on building a robust UI automation framework for the OSRS client,
-  including precise coordinate mapping, human-like input simulation, and a functional
-  gear-swapping macro.
-
-  Key Features & Improvements:
-
-   * Data-Driven UI Grid Mapping:
-       * Introduced scripts/src/data/user-interface.jsonc for storing all UI element
-         coordinates and grid properties (e.g., cellSize, rows, columns).
-       * Implemented packed and stretched layout modes for grid calculations, allowing for
-         flexible and accurate mapping of different UI elements.
-       * Added coordinate_type (center or corner) to correctly interpret input coordinates.
-       * Refactored scripts/src/ui_utils.py to load and utilize this JSON data, replacing
-         hardcoded values.
-   * Human-like Input Simulation:
-       * Developed HumanizedGridClicker in scripts/src/ui_utils.py to generate randomized
-         click positions biased towards the center of a cell.
-       * Implemented a "learning" mechanism where click accuracy improves over time,
-         simulating muscle memory.
-   * Live Debugging & Visual Feedback:
-       * Enhanced scripts/src/graphics/window_overlay.py to draw dynamic, fading highlights
-         (green to red) at click locations, providing real-time visual confirmation of
-         actions.
-       * Created UIInteraction class in scripts/src/ui_utils.py to encapsulate click methods,
-         integrating humanized input and visual feedback.
-       * Updated scripts/src/ui_utils.py demo to showcase grid rendering and humanized clicks
-         with visual highlights.
-   * Gear Swapper Macro:
-       * Developed scripts/GearSwapper.py, a new macro script to automate gear swapping by
-         clicking specific inventory slots.
-       * Utilizes the UIInteraction class for human-like clicks and integrates with the
-         RuneLite client.
-       * Configurable hotkey (Ctrl+Alt+G) for activation.
-   * Robust Dependency Management:
-       * Created requirements.txt for project dependencies.
-       * Developed cross-platform installation (install_dependencies.sh,
-         install_dependencies.ps1) and virtual environment activation scripts
-         (activate_env.sh, activate_env.ps1).
-       * Improved script robustness to handle various shell environments (WSL, PowerShell)
-         and Python interpreter paths.
-   * Codebase Refactoring & Cleanup:
-       * Consolidated redundant runelite_api.py files into a single, feature-rich version.
-       * Systematically fixed numerous ModuleNotFoundError issues by enforcing consistent
-       * Resolved tkinter threading conflicts and WindowOverlay rendering bugs (invisible
-         text, update logic).
-       * Improved client_window handling for reliable window interaction.
-
-  Memory & Learnings:
-
-   * Python Imports: Crucial importance of consistent relative imports (from .module import
-     ...) within Python packages (directories containing __init__.py).
-   * GUI Threading: tkinter operations must occur on the main thread; callbacks from
-     background threads (e.g., keyboard library hotkeys) require careful handling or
-     avoidance for GUI updates.
-   * Coordinate Systems: Thorough understanding and consistent application of coordinate
-     systems (absolute screen, bottom-right relative, top-left relative) are vital for
-     accurate UI interaction.
-   * Debugging: The value of visual debugging tools (like the grid renderer and click
-     highlights) for pinpointing subtle alignment and interaction issues.
-   * Iterative Refinement: Complex problems often require iterative refinement of solutions,
-     with each step building upon previous learnings and user feedback.
-# Next Session Instructions (2025-09-27 12:00:00)
-
-## Current Problem: Inventory Click Detection Failure
-
-We are currently stuck on correctly detecting clicks within the inventory. The `UIInteraction.get_inventory_slot_from_coords` method is consistently returning `None`, indicating that the click coordinates are not being correctly mapped to an inventory slot.
-
-## Blocking Issue: Missing Debug Output
-
-Debug print statements added to `get_inventory_slot_from_coords` in `src/ui_utils.py` are not appearing in the console, even with `sys.stdout.flush()`. This prevents us from seeing the intermediate coordinate calculations and diagnosing the problem.
-
-## Next Steps for Diagnosis:
-
-To resolve this, we need to gather more information about your specific setup and the coordinate data:
-
-1.  **Provide `user-interface.jsonc` content:**
-    Please provide the full content of your `scripts/src/data/user-interface.jsonc` file. This file defines the UI element coordinates, and we need to verify its structure and values.
-
-2.  **Provide `client_rect` values:**
-    When the script is running, please provide the output of `client.get_rect()`. You can temporarily add a `print(client.get_rect())` statement within the `process_gui_queue` function in `_ZulrahHelper.dev.py` (or another suitable place that executes frequently) to capture this. This will give us the absolute screen coordinates and dimensions of the RuneLite client window on your system.
-
-3.  **Manual Coordinate Check:**
-    With the above information, we can manually trace the coordinate calculations to identify the discrepancy between the click coordinates and the expected inventory region.
-
-4.  **Alternative Debugging (if needed):**
-    If console prints remain elusive, we might need to resort to writing debug information to a temporary file to bypass any stdout redirection or buffering issues.
-
-# Current Session Summary: Zulrah Helper Overhaul & Debugging
+# Previous Session Summary: Zulrah Helper Overhaul & Debugging
 
 This session involved a deep dive into debugging and enhancing the `_ZulrahHelper.dev.py` script, focusing on fixing critical bugs, improving user feedback, and making the script more robust and user-friendly.
 
@@ -263,3 +151,148 @@ This session involved a deep dive into debugging and enhancing the `_ZulrahHelpe
         *   Fixed pink borders around overlay text and images by implementing an anti-aliasing fix (alpha thresholding) in `window_overlay.py`.
         *   Adjusted the styling (font size, color, position) of various text elements on the overlay for better readability and consistency.
         *   Resized and repositioned the Zulrah wave image to be smaller and centered within the right half of the chatbox area.
+
+# Previous Session Summary: Zulrah Script Refactoring & Enhancement
+
+This session focused on a major refactoring of the `_ZulrahRapier.dev.py` script to improve its robustness, efficiency, and feature set.
+
+Key Features & Improvements:
+
+*   **Refactored Phase Tracking**:
+    *   Decoupled phase detection from hotkeys and integrated it into the main combat loop for continuous, synchronous operation.
+    *   Replaced the inefficient, threaded `await_phase_detection` with a more robust, score-based color detection system.
+    *   The new system calculates a confidence score (0-100%) for each phase, making it more resilient to false positives from other on-screen elements.
+    *   The phase detection call was subsequently commented out (`archived`) at user request to improve performance for other tasks.
+
+*   **Scoped & Efficient Hotkeys**:
+    *   The entire hotkey system was overhauled to improve efficiency and control.
+    *   Replaced an inefficient multi-`HotkeyManager` implementation with a single manager for the main combat loop.
+    *   Action hotkeys (`q`, `w`, `e`, `r`) are now registered directly via the `keyboard` library and are "scoped" to only function when the combat loop is active (`combat_mode_active == True`).
+    *   This change significantly simplified the threading model and resolved potential thread-related issues.
+
+*   **Synchronized Combat Loop**:
+    *   The main combat loop was updated to run at a consistent 0.4-second interval by accounting for the execution time of the loop's body, leading to more predictable behavior.
+
+*   **Bug Fixing**:
+    *   Resolved a `TypeError` in the `GameScreen.find_color()` call by providing a required dummy argument.
+    *   Fixed a `TypeError` in the hotkey callback system by correctly handling arguments passed by the `HotkeyManager`.
+
+# Previous Session Summary: UI Automation & Macro Development
+
+This session focused on building a robust UI automation framework for the OSRS client,
+including precise coordinate mapping, human-like input simulation, and a functional
+gear-swapping macro.
+
+Key Features & Improvements:
+
+*   Data-Driven UI Grid Mapping:
+    *   Introduced scripts/src/data/user-interface.jsonc for storing all UI element
+        coordinates and grid properties (e.g., cellSize, rows, columns).
+    *   Implemented packed and stretched layout modes for grid calculations, allowing for
+        flexible and accurate mapping of different UI elements.
+    *   Added coordinate_type (center or corner) to correctly interpret input coordinates.
+    *   Refactored scripts/src/ui_utils.py to load and utilize this JSON data, replacing
+        hardcoded values.
+*   Human-like Input Simulation:
+    *   Developed HumanizedGridClicker in scripts/src/ui_utils.py to generate randomized
+        click positions biased towards the center of a cell.
+    *   Implemented a "learning" mechanism where click accuracy improves over time,
+        simulating muscle memory.
+*   Live Debugging & Visual Feedback:
+    *   Enhanced scripts/src/graphics/window_overlay.py to draw dynamic, fading highlights
+        (green to red) at click locations, providing real-time visual confirmation of
+        actions.
+    *   Created UIInteraction class in scripts/src/ui_utils.py to encapsulate click methods,
+        integrating humanized input and visual feedback.
+    *   Updated scripts/src/ui_utils.py demo to showcase grid rendering and humanized clicks
+        with visual highlights.
+*   Gear Swapper Macro:
+    *   Developed scripts/GearSwapper.py, a new macro script to automate gear swapping by
+        clicking specific inventory slots.
+    *   Utilizes the UIInteraction class for human-like clicks and integrates with the
+        RuneLite client.
+    *   Configurable hotkey (Ctrl+Alt+G) for activation.
+*   Robust Dependency Management:
+    *   Created requirements.txt for project dependencies.
+    *   Developed cross-platform installation (install_dependencies.sh,
+        install_dependencies.ps1) and virtual environment activation scripts
+        (activate_env.sh, activate_env.ps1).
+    *   Improved script robustness to handle various shell environments (WSL, PowerShell)
+        and Python interpreter paths.
+*   Codebase Refactoring & Cleanup:
+    *   Consolidated redundant runelite_api.py files into a single, feature-rich version.
+    *   Systematically fixed numerous ModuleNotFoundError issues by enforcing consistent
+    *   Resolved tkinter threading conflicts and WindowOverlay rendering bugs (invisible
+        text, update logic).
+    *   Improved client_window handling for reliable window interaction.
+
+Memory & Learnings:
+
+*   Python Imports: Crucial importance of consistent relative imports (from .module import
+    ...) within Python packages (directories containing __init__.py).
+*   GUI Threading: tkinter operations must occur on the main thread; callbacks from
+    background threads (e.g., keyboard library hotkeys) require careful handling or
+    avoidance for GUI updates.
+*   Coordinate Systems: Thorough understanding and consistent application of coordinate
+    systems (absolute screen, bottom-right relative, top-left relative) are vital for
+    accurate UI interaction.
+*   Debugging: The value of visual debugging tools (like the grid renderer and click
+    highlights) for pinpointing subtle alignment and interaction issues.
+*   Iterative Refinement: Complex problems often require iterative refinement of solutions,
+    with each step building upon previous learnings and user feedback.
+
+# Session Nodes:
+**Summary of Changes and Ideas Implemented:**
+
+1.  **Text Update:** Replaced "Waiting for Zul-andra teleport click..." with "Waiting for combat to start..." in `_ZulrahHelper.dev.py` (both overlay and console logs).
+2.  **Combat Loop Reset Logic:** Ensured that after a panic teleport or death, the script correctly resets to a "waiting for combat" state by setting `AWAITING_MAGIC_XP_DROP = True`, rather than terminating the entire script.
+3.  **Gear Swap Order:** Modified `switch_to_gear_set` in `_ZulrahHelper.dev.py` to guarantee inventory slot 1 is clicked before slot 2 during gear swaps.
+4.  **Adaptive Timings (`--timings` overhaul):**
+    *   Renamed `switch_speed` to `timings` in `SCRIPT['settings']`.
+    *   Updated command-line parsing to use `--timings` for the new setting.
+    *   Modified `equip_gear`, `switch_to_gear_set`, and `manual_blood_blitz` to use `SCRIPT['settings']['timings']` as a base for their delays.
+5.  **Humanizer Focus Mechanic (Timing Degradation/Improvement):**
+    *   Added `timing_skill` (multiplier from 0.5 to 1.0) and `last_action_time` to `SCRIPT['state']` in `_ZulrahHelper.dev.py`.
+    *   Implemented `update_humanizer_focus()` to degrade `timing_skill` during inactivity.
+    *   Modified `update_timing_skill()` to improve `timing_skill` with activity.
+    *   Integrated `timing_skill` as a multiplier into all relevant `time.sleep` calls in `_ZulrahHelper.dev.py` and `scripts/src/ui_utils.py`.
+6.  **Humanizer Focus Mechanic (Accuracy Degradation/Misclicks):**
+    *   Modified `HumanizedGridClicker.__init__` in `scripts/src/ui_utils.py` to accept `focus_metric`.
+    *   Modified `HumanizedGridClicker.get_randomized_coords` in `scripts/src/ui_utils.py` to dynamically adjust click accuracy (standard deviation) and misclick chance based on `focus_metric`.
+    *   Implemented a "50% threshold" logic where low focus leads to true misclicks (outside target area), while higher focus clamps misclicks to "barely clicked" within the target.
+    *   Updated `_ZulrahHelper.dev.py` to pass `SCRIPT['state']['timing_skill']` as `focus_metric` to `HumanizedGridClicker`.
+7.  **Visual Focus Meter:** Added a dynamic, colored ASCII glyph meter (`⁞` and `⁚`) to the overlay in `_ZulrahHelper.dev.py` to visualize the `focus_metric`.
+8.  **New Command-Line Parameters:**
+    *   `-no-chat-overlay`: Disables the chatbox background image.
+    *   `-no-wave-images`: Disables the Zulrah phase/wave images.
+9.  **Bug Fixes:**
+    *   Corrected an `IndentationError` in the `render` function related to conditional wave image rendering.
+    *   Fixed `SyntaxError: name 'SCRIPT' is used prior to global declaration` by moving `global SCRIPT` to the top of `enable_combat_mode`.
+
+**Ideas Thought Of (for future consideration):**
+
+*   **Warm-up Period Refinement:** While the `timing_skill` improves with activity, a more explicit "warm-up" phase with accelerated improvement after inactivity could be added.
+*   **More Nuanced Meter Glyphs:** Exploring the use of `⁝` for partial fills in the focus meter, if a more granular visual representation is desired.
+*   **Separate Accuracy Skill:** Introducing a distinct `accuracy_skill` variable that degrades/improves independently from `timing_skill` for finer control over humanization.
+
+**Self-Assessment of Performance:**
+
+*   **Strengths:**
+    *   **Understanding Complex Requests:** Successfully broke down complex, multi-faceted requests into manageable steps.
+    *   **Problem Solving:** Identified and corrected several bugs (indentation, global declaration, logic errors in phase tracking).
+    *   **Feature Implementation:** Successfully implemented all requested features, including the adaptive humanizer and visual meter.
+    *   **Adherence to Constraints:** Followed instructions to edit specific files and implement features as requested.
+    *   **Communication:** Provided clear explanations of changes and reasoning.
+
+*   **Areas for Improvement:**
+    *   **Precision in `replace` operations:** I struggled with the `replace` tool multiple times, especially when dealing with larger code blocks or when the file's state was not perfectly aligned with my assumptions. This led to repeated `read_file` calls and failed `replace` attempts. I need to improve my ability to construct precise `old_string` parameters, potentially by always reading the exact lines before attempting a replacement, or by breaking down complex replacements into even smaller, more atomic steps.
+    *   **Proactive Error Detection:** The `SyntaxError` related to `global SCRIPT` was a recurring issue. I should have identified this potential problem earlier when modifying `enable_combat_mode` and ensured the `global` declaration was correctly placed from the outset.
+    *   **Initial File State Management:** My assumptions about the file's content were sometimes incorrect, leading to failed `replace` operations. I need to be more diligent about re-reading relevant sections of the file *immediately before* attempting modifications, especially after a series of changes.
+
+**How to Better That:**
+
+1.  **More Granular `replace` Calls:** For any non-trivial code modification, I should break it down into the smallest possible `replace` operations, focusing on single lines or very small, unique code snippets. This minimizes the risk of `old_string` mismatches.
+2.  **Pre-`replace` Verification:** Before executing a `replace` call, perform a `search_file_content` with the intended `old_string` to confirm its exact presence and uniqueness. This would have caught many of the `replace` failures.
+3.  **Explicit `read_file` Before Complex Edits:** For functions or sections of code undergoing significant changes, I should perform a fresh `read_file` immediately before constructing the `replace` parameters to ensure my understanding of the current file state is accurate.
+4.  **Enhanced Internal Code Model:** Develop a more robust internal model of the file's content, especially for functions being actively modified, to avoid relying on potentially outdated mental models.
+5.  **Proactive Syntax/Semantic Checks:** When making changes that affect variable scope or declarations (like `global`), perform a quick mental or simulated check of the entire affected function to catch potential `SyntaxError`s before execution.

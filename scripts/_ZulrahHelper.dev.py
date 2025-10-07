@@ -4,6 +4,41 @@ Main script for the Zulrah helper.
 This script provides gear and prayer switching assistance for the Zulrah boss fight,
 with a manual phase confirmation system and a real-time overlay.
 """
+
+# --- Advanced Humanizer Ideas (Future Implementation) ---
+#
+# The current humanizer logic for timing and accuracy "learns" in one direction:
+# it gets progressively better (faster and more accurate) with each action.
+# To create a more realistic simulation, we can introduce a "focus" or "fatigue"
+# mechanic that degrades these skills over time, especially during periods of
+# inactivity (AFK).
+#
+# 1.  Focus/Activity Tracker:
+#     -   Track the time since the last user-initiated action or script activity.
+#     -   If the script is inactive for a certain threshold (e.g., > 2 minutes),
+#         begin to degrade the "skill" variables.
+#
+# 2.  Skill Degradation (Losing Focus):
+#     -   Timing Skill: Gradually increase the `timing_skill` multiplier back
+#         towards its default (1.0) or even slightly higher to simulate being
+#         "cold" or out of rhythm.
+#     -   Accuracy Skill: Similarly, degrade the accuracy skill in the
+#         `HumanizedGridClicker` to make clicks less precise.
+#     -   Miss-click Chance: The probability of a miss-click could slightly
+#         increase as focus is lost.
+#
+# 3.  Warm-up Period:
+#     -   When activity resumes, the script would need to "warm up" again, with
+#         the timing and accuracy skills improving at a potentially faster rate
+#         for the first few actions before returning to the normal, gradual
+#         improvement.
+#
+# This would create a dynamic where the script performs best during continuous
+# activity but becomes less "perfect" after breaks, mimicking a human player's
+# natural ebb and flow of concentration.
+#
+# --- End of Advanced Humanizer Ideas ---
+
 import time
 import threading
 import sys
@@ -14,6 +49,7 @@ from typing import Literal
 import os
 from PIL import Image # Import Image for type hinting
 from pynput import mouse # For click detection
+import json # Added for persisting humanizer state
 
 
 # pip packages/module
@@ -63,46 +99,7 @@ class ClickPhaseDetector:
             return
 
         # --- Teleport Click Detection (Entry Trigger) ---
-        if SCRIPT['state']['activated'] and not combat_mode_active and not AWAITING_MAGIC_XP_DROP:
-            client_rect = self.client_window.get_rect()
-            if client_rect:
-                relative_coords = self.ui_interaction._get_relative_coords((x, y))
-                if not relative_coords:
-                    return
-
-                abs_coords_recalculated = self.ui_interaction._get_abs_coords(relative_coords)
-                if not abs_coords_recalculated:
-                    return
-
-                recalculated_x, recalculated_y = abs_coords_recalculated
-
-                inv_x_min = client_rect['right'] - 250
-                inv_y_min = client_rect['bottom'] - 300
-                if recalculated_x > inv_x_min and recalculated_y > inv_y_min:
-                    print(f"Click detected in inventory area at ({recalculated_x}, {recalculated_y}).")
-                    # Click is in inventory area, check the item
-                    try:
-                        slot_index_1_based = self.ui_interaction.get_inventory_slot_from_coords(recalculated_x, recalculated_y)
-                        print(f"Calculated inventory slot index: {slot_index_1_based}")
-                        if slot_index_1_based is not None:
-                            slot_index_0_based = slot_index_1_based - 1
-                            inventory = RuneLiteAPI().get_inventory()
-                            if inventory and slot_index_0_based < len(inventory):
-                                item = inventory[slot_index_0_based]
-                                item_id = item.get('id')
-                                item_name = item.get('name', 'Unknown')
-                                print(f"Clicked inventory slot {slot_index_1_based} (0-indexed: {slot_index_0_based}), Item ID: {item_id}, Name: {item_name}")
-
-                                if item_id == 12938: # Zul-andra teleport
-                                    print("Zul-andra teleport clicked. Waiting for XP drop to start combat.")
-                                    AWAITING_MAGIC_XP_DROP = True
-                                    return # Exit to avoid processing as a phase click
-                            else:
-                                print(f"Inventory is empty or slot_index {slot_index_0_based} is out of bounds for inventory size {len(inventory) if inventory else 0}.")
-                        else:
-                            print("Click was not mapped to a valid inventory slot.")
-                    except Exception as e:
-                        print(f"Error checking for teleport click: {e}")
+        # Zul-andra teleport click detection removed. Combat now starts on any magic XP drop when the script is active.
         # --- End of Teleport Click Detection ---
 
         if not LISTENING_FOR_PHASE_CLICK:
@@ -131,13 +128,17 @@ class ClickPhaseDetector:
                     next_phase_info = PHASE_HANDLER.fetch()
                     if next_phase_info:
                         if PHASE_HANDLER.wave_counted < len(next_phase_info['phases']):
-                            SCRIPT['state']['next_phase_style'] = next_phase_info['phases'][PHASE_HANDLER.wave_counted]
+                            next_phase_style = next_phase_info['phases'][PHASE_HANDLER.wave_counted]
+                            SCRIPT['state']['next_phase_style'] = next_phase_style
+                            SCRIPT['state']['phase'] = next_phase_style
                             SCRIPT['state']['phase_start_time'] = time.time()
                             SCRIPT['state']['current_phase_duration_ticks'] = next_phase_info['ticks'][PHASE_HANDLER.wave_counted - 1]
                         else:
                             SCRIPT['state']['next_phase_style'] = 'END'
+                            SCRIPT['state']['phase'] = 'END'
                     else:
                         SCRIPT['state']['next_phase_style'] = 'UNKNOWN'
+                        SCRIPT['state']['phase'] = 'UNKNOWN'
                 else:
                     print(f"Failed to confirm phase: {detected_phase}")
 
@@ -183,7 +184,8 @@ SCRIPT={
     "settings": {
         "_done": False,
         "_started": False,
-        "switch_speed": 0.05, # Half of pyautogui's default 0.1s pause
+        "timings": 0.05, # Base delay for actions
+        "use_chatbox_overlay": True,
         "switch_count": 5,
         "api_port": 8080,
         "use_rotation_tracker": False, #TODO
@@ -207,6 +209,7 @@ SCRIPT={
         "use_phase_counter": True,
         "use_jad_indicator": True,
         "use_performance_mode": True,
+        "use_wave_images": True,
         "use_image_recognition": False,
         "mode": "hotkeys",
         "manual_spell_slot": 1,
@@ -226,6 +229,8 @@ SCRIPT={
         "next_phase_style": "UNKNOWN",
         "phase_start_time": 0,
         "current_phase_duration_ticks": 0,
+        "timing_skill": 1.0, # Multiplier, starts at 1.0, decreases as skill increases
+        "last_action_time": 0,
     },
     "setup": [
         {
@@ -350,18 +355,18 @@ def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAP
     if not SCRIPT['state']['activated']:
         overlay.draw_rectangle((0, 0), (overlay.width - 1, overlay.height - 1), outline_color=(255, 0, 0), width=2)
         overlay.draw_text("Overlay Inactive (Press '.' to activate)", position=(10, 7), color=(255, 0, 0), font_size=17)
-        if chatbox_image:
+        if SCRIPT['settings']['use_chatbox_overlay'] and chatbox_image:
             overlay.draw_pil_image(chatbox_image, position=(0, overlay.height - chatbox_height))
         return
     
     if not combat_mode_active:
         overlay.draw_rectangle((0, 0), (overlay.width - 1, overlay.height - 1), outline_color=(255, 165, 0), width=2) # Orange border for waiting
-        overlay.draw_text("Waiting for Zul-andra teleport click...", position=(10, 7), color=(0, 255, 255), font_size=17)
-        if chatbox_image:
+        overlay.draw_text("Waiting for combat to start...", position=(10, 7), color=(0, 255, 255), font_size=17)
+        if SCRIPT['settings']['use_chatbox_overlay'] and chatbox_image:
             overlay.draw_pil_image(chatbox_image, position=(0, overlay.height - chatbox_height))
         return
     
-    if chatbox_image:
+    if SCRIPT['settings']['use_chatbox_overlay'] and chatbox_image:
         overlay.draw_pil_image(chatbox_image, position=(0, overlay.height - chatbox_height))
 
     # --- New Rendering Logic ---
@@ -372,6 +377,26 @@ def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAP
     rotation_num = SCRIPT['state'].get('matched_rotation', 0)
     wave_num = SCRIPT['state'].get('manual_phase_index', 0)
     overlay.draw_text(f"Rotation: {rotation_num} | Wave: {wave_num}", position=(info_pos_x, info_pos_y), font_size=_font_size, color=(0, 0, 0))
+
+    # --- Focus Meter ---
+    timing_skill = SCRIPT['state'].get('timing_skill', 1.0)
+    focus_metric = (1.0 - timing_skill) / 0.5 # Maps [1.0, 0.5] to [0, 1]
+    focus_percent = int(focus_metric * 100)
+
+    METER_LENGTH = 10
+    FULL_GLYPH = '⁞'
+    EMPTY_GLYPH = '⁚'
+
+    filled_segments = int(focus_metric * METER_LENGTH)
+    meter_string = FULL_GLYPH * filled_segments + EMPTY_GLYPH * (METER_LENGTH - filled_segments)
+
+    meter_color = (0, 255, 0) # Green
+    if focus_metric <= 0.7:
+        meter_color = (255, 255, 0) # Yellow
+    if focus_metric <= 0.3:
+        meter_color = (255, 0, 0) # Red
+
+    overlay.draw_text(f"Focus: {meter_string} {focus_percent}%", position=(info_pos_x, info_pos_y + (_font_size + 5)), font_size=_font_size, color=meter_color)
 
     # Display Phase Cooldown Timer
     phase_start_time = SCRIPT['state'].get('phase_start_time', 0)
@@ -392,51 +417,53 @@ def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAP
         overlay.draw_text("Click Boss to Confirm Phase", position=(info_pos_x, info_pos_y + 2 * (_font_size + 5)), font_size=_font_size, color=(0, 0, 0))
 
     # --- Render Phase Graphic ---
-    rotation_num = SCRIPT['state'].get('matched_rotation', 0)
-    wave_num = SCRIPT['state'].get('manual_phase_index', 0)
+    if SCRIPT['settings']['use_wave_images']:
+        rotation_num = SCRIPT['state'].get('matched_rotation', 0)
+        rotation_num = SCRIPT['state'].get('matched_rotation', 0)
+        wave_num = SCRIPT['state'].get('manual_phase_index', 0)
 
-    if rotation_num > 0 and wave_num > 0:
-        base_rotation_path = os.path.join(os.path.dirname(__file__), 'res', 'zulrah', f'rotation-{rotation_num}')
-        specific_image_path = os.path.join(base_rotation_path, f'wave_{wave_num:02d}.png')
-        default_image_path = os.path.join(base_rotation_path, 'wave_01.png')
+        if rotation_num > 0 and wave_num > 0:
+            base_rotation_path = os.path.join(os.path.dirname(__file__), 'res', 'zulrah', f'rotation-{rotation_num}')
+            specific_image_path = os.path.join(base_rotation_path, f'wave_{wave_num:02d}.png')
+            default_image_path = os.path.join(base_rotation_path, 'wave_01.png')
 
-        phase_image = None
+            phase_image = None
 
-        # 1. Check cache for the specific image
-        if specific_image_path in PHASE_IMAGE_CACHE:
-            if PHASE_IMAGE_CACHE[specific_image_path] != "not_found":
-                phase_image = PHASE_IMAGE_CACHE[specific_image_path]
-        else:
-            # 2. Try to load specific image and cache it
-            try:
-                phase_image = Image.open(specific_image_path).convert("RGBA")
-                PHASE_IMAGE_CACHE[specific_image_path] = phase_image
-            except FileNotFoundError:
-                PHASE_IMAGE_CACHE[specific_image_path] = "not_found"
-
-        # 3. If specific image failed, try the default (wave_01)
-        if phase_image is None:
-            if default_image_path in PHASE_IMAGE_CACHE:
-                if PHASE_IMAGE_CACHE[default_image_path] != "not_found":
-                    phase_image = PHASE_IMAGE_CACHE[default_image_path]
+            # 1. Check cache for the specific image
+            if specific_image_path in PHASE_IMAGE_CACHE:
+                if PHASE_IMAGE_CACHE[specific_image_path] != "not_found":
+                    phase_image = PHASE_IMAGE_CACHE[specific_image_path]
             else:
+                # 2. Try to load specific image and cache it
                 try:
-                    phase_image = Image.open(default_image_path).convert("RGBA")
-                    PHASE_IMAGE_CACHE[default_image_path] = phase_image
+                    phase_image = Image.open(specific_image_path).convert("RGBA")
+                    PHASE_IMAGE_CACHE[specific_image_path] = phase_image
                 except FileNotFoundError:
-                    PHASE_IMAGE_CACHE[default_image_path] = "not_found"
+                    PHASE_IMAGE_CACHE[specific_image_path] = "not_found"
 
-        if phase_image:
-            # Resize the image to 0.4 times the original size
-            new_width = int(phase_image.width * 0.4)
-            new_height = int(phase_image.height * 0.4)
-            resized_image = phase_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            # 3. If specific image failed, try the default (wave_01)
+            if phase_image is None:
+                if default_image_path in PHASE_IMAGE_CACHE:
+                    if PHASE_IMAGE_CACHE[default_image_path] != "not_found":
+                        phase_image = PHASE_IMAGE_CACHE[default_image_path]
+                else:
+                    try:
+                        phase_image = Image.open(default_image_path).convert("RGBA")
+                        PHASE_IMAGE_CACHE[default_image_path] = phase_image
+                    except FileNotFoundError:
+                        PHASE_IMAGE_CACHE[default_image_path] = "not_found"
 
-            # Center the image in the right half of the chatbox
-            chatbox_right_half_center_x = overlay.width * 0.75
-            image_pos_x = int(chatbox_right_half_center_x - (resized_image.width / 2))
-            image_pos_y = int(overlay.height - chatbox_height + (chatbox_height - resized_image.height) / 2) # Vertically centered in chatbox
-            overlay.draw_pil_image(resized_image, position=(image_pos_x, image_pos_y))
+            if phase_image:
+                # Resize the image to 0.4 times the original size
+                new_width = int(phase_image.width * 0.4)
+                new_height = int(phase_image.height * 0.4)
+                resized_image = phase_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+                # Center the image in the right half of the chatbox
+                chatbox_right_half_center_x = overlay.width * 0.75
+                image_pos_x = int(chatbox_right_half_center_x - (resized_image.width / 2))
+                image_pos_y = int(overlay.height - chatbox_height + (chatbox_height - resized_image.height) / 2) # Vertically centered in chatbox
+                overlay.draw_pil_image(resized_image, position=(image_pos_x, image_pos_y))
 
     return
 
@@ -453,6 +480,68 @@ def enable_user_mouse_input():
         import ctypes
         ctypes.windll.user32.BlockInput(False)
     except: pass
+
+HUMANIZER_STATE_FILE = os.path.join(os.path.expanduser('~'), '.zulrah_humanizer_state.json')
+
+def save_humanizer_state():
+    global SCRIPT
+    state_to_save = {
+        'last_action_time': SCRIPT['state'].get('last_action_time', time.time()),
+        'timing_skill': SCRIPT['state'].get('timing_skill', 1.0)
+    }
+    try:
+        with open(HUMANIZER_STATE_FILE, 'w') as f:
+            json.dump(state_to_save, f)
+    except Exception as e:
+        print(f"Error saving humanizer state: {e}")
+
+def load_humanizer_state():
+    global SCRIPT
+    try:
+        if os.path.exists(HUMANIZER_STATE_FILE):
+            with open(HUMANIZER_STATE_FILE, 'r') as f:
+                loaded_state = json.load(f)
+                SCRIPT['state']['last_action_time'] = loaded_state.get('last_action_time', time.time())
+                SCRIPT['state']['timing_skill'] = loaded_state.get('timing_skill', 1.0)
+                print(f"Loaded humanizer state: last_action_time={SCRIPT['state']['last_action_time']:.2f}, timing_skill={SCRIPT['state']['timing_skill']:.3f}")
+                
+                # Apply degradation if script was off for a long time
+                time_since_last_action = time.time() - SCRIPT['state']['last_action_time']
+                if time_since_last_action > 120: # If inactive for more than 2 minutes
+                    # Simulate degradation over the offline period
+                    degradation_factor = time_since_last_action / 120 # How many 2-minute intervals passed
+                    current_skill = SCRIPT['state']['timing_skill']
+                    # Degradation is 0.0005 per 2 minutes (from update_humanizer_focus)
+                    degraded_skill = min(1.0, current_skill + (0.0005 * degradation_factor))
+                    SCRIPT['state']['timing_skill'] = degraded_skill
+                    print(f"Applied offline degradation. New timing_skill={SCRIPT['state']['timing_skill']:.3f}")
+
+    except Exception as e:
+        print(f"Error loading humanizer state: {e}")
+    
+    # Ensure last_action_time is always updated to now if not loaded or error occurred
+    if 'last_action_time' not in SCRIPT['state']:
+        SCRIPT['state']['last_action_time'] = time.time()
+    if 'timing_skill' not in SCRIPT['state']:
+        SCRIPT['state']['timing_skill'] = 1.0
+
+def update_humanizer_focus():
+    """Gradually degrades timing skill if the script is inactive."""
+    if time.time() - SCRIPT['state'].get('last_action_time', 0) > 120: # 2 minutes
+        current_skill = SCRIPT['state'].get('timing_skill', 1.0)
+        # Degrade skill back towards 1.0 (default)
+        degraded_skill = min(1.0, current_skill + 0.0005)
+        if degraded_skill != current_skill:
+            SCRIPT['state']['timing_skill'] = degraded_skill
+            save_humanizer_state() # Save state after degradation
+
+def update_timing_skill():
+    """Gradually decreases the timing skill multiplier to simulate getting faster."""
+    current_skill = SCRIPT['state'].get('timing_skill', 1.0)
+    # Gets 2.5% faster each time, down to a max of 50% faster (0.5 multiplier)
+    new_skill = max(0.5, current_skill * 0.975)
+    SCRIPT['state']['timing_skill'] = new_skill
+    save_humanizer_state() # Save state after improvement
 
 def is_on_cooldown(cooldown_name: str, duration: float) -> bool:
     last_action_time = SCRIPT['state'].get(f'last_{cooldown_name}_time', 0)
@@ -510,9 +599,8 @@ def establish_gear_sets():
         print("[ZulrahHelper] Warning: Could not fully establish both gear sets. Gear switching may not work correctly.")
 
 def switch_to_gear_set(humanizer: UIInteraction, target_gear_set_ids: list[int]):
+    SCRIPT['state']['last_action_time'] = time.time()
     disable_user_mouse_input()
-    pyautogui.press('F2') # Open inventory tab
-    time.sleep(random.uniform(0.08, 0.15)) # Wait for tab to open
 
     # Get current equipped items and inventory
     current_equipped = {item['id'] for item in api.get_equipment() if item['id'] != -1}
@@ -536,17 +624,15 @@ def switch_to_gear_set(humanizer: UIInteraction, target_gear_set_ids: list[int])
             if not found_in_inv:
                 print(f"[ZulrahHelper] Warning: {get_item_display_name(target_item_id)} needed but not found in inventory.")
     
-    # Randomize click order
-    if random.choice([True, False]):
-        items_to_click_from_inv.reverse()
+    items_to_click_from_inv.sort() # Ensure slot 1 is clicked before slot 2
 
     for slot in items_to_click_from_inv:
         print(f"[ZulrahHelper] Clicking inventory slot {slot} to equip.")
         humanizer.click_inventory_slot(slot)
-        time.sleep(random.uniform(0.04, 0.08)) # Randomized click delay
+        time.sleep(random.uniform(SCRIPT['settings']['timings'] * 0.8, SCRIPT['settings']['timings'] * 1.6) * SCRIPT['state']['timing_skill']) # Randomized click delay
 
     # --- Verification and Correction ---
-    time.sleep(0.4) # Wait for game tick to update equipment
+    time.sleep(SCRIPT['settings']['timings'] * 8 * SCRIPT['state']['timing_skill']) # Wait for game tick to update equipment
 
     equipped_after_switch = {item['id'] for item in api.get_equipment() if item['id'] != -1}
     print(f"[ZulrahHelper] Equipped after initial switch attempt: {[get_item_display_name(item_id) for item_id in equipped_after_switch]}")
@@ -562,14 +648,13 @@ def switch_to_gear_set(humanizer: UIInteraction, target_gear_set_ids: list[int])
             found_in_inv = False
             for i, inv_item in enumerate(current_inventory_list):
                 if inv_item['id'] == missing_item_id:
-                    print(f"[ZulrahHelper] Re-clicking {get_item_display_name(missing_item_id)} in inventory slot {i+1}.")
                     humanizer.click_inventory_slot(i + 1)
-                    time.sleep(random.uniform(0.04, 0.08))
+                    time.sleep(random.uniform(SCRIPT['settings']['timings'] * 0.8, SCRIPT['settings']['timings'] * 1.6) * SCRIPT['state']['timing_skill'])
                     found_in_inv = True
                     break
             if not found_in_inv:
                 print(f"[ZulrahHelper] Error: {get_item_display_name(missing_item_id)} still missing and not found in inventory for retry.")
-        time.sleep(0.4) # Wait again after correction attempt
+        time.sleep(SCRIPT['settings']['timings'] * 8 * SCRIPT['state']['timing_skill']) # Wait again after correction attempt
         equipped_after_switch = {item['id'] for item in api.get_equipment() if item['id'] != -1} # Re-check
         print(f"[ZulrahHelper] Equipped after primary correction: {[get_item_display_name(item_id) for item_id in equipped_after_switch]}")
 
@@ -587,19 +672,21 @@ def switch_to_gear_set(humanizer: UIInteraction, target_gear_set_ids: list[int])
                 if inv_item['id'] == unexpected_item_id:
                     print(f"[ZulrahHelper] Clicking {get_item_display_name(unexpected_item_id)} in inventory slot {i+1} to unequip.")
                     humanizer.click_inventory_slot(i + 1)
-                    time.sleep(random.uniform(0.04, 0.08))
+                    time.sleep(random.uniform(SCRIPT['settings']['timings'] * 0.8, SCRIPT['settings']['timings'] * 1.6) * SCRIPT['state']['timing_skill'])
                     found_in_inv = True
                     break
             if not found_in_inv:
                 print(f"[ZulrahHelper] Error: {get_item_display_name(unexpected_item_id)} unexpectedly equipped but not found in inventory for unequip retry.")
-        time.sleep(0.4) # Wait again after correction attempt
+        time.sleep(SCRIPT['settings']['timings'] * 8 * SCRIPT['state']['timing_skill']) # Wait again after correction attempt
         equipped_after_switch = {item['id'] for item in api.get_equipment() if item['id'] != -1} # Re-check
         print(f"[ZulrahHelper] Equipped after secondary correction: {[get_item_display_name(item_id) for item_id in equipped_after_switch]}")
+
+    update_timing_skill()
 
 def equip_gear(target_type: str):
     global SCRIPT
     original_pause = pyautogui.PAUSE
-    pyautogui.PAUSE = SCRIPT['settings']['switch_speed']
+    pyautogui.PAUSE = SCRIPT['settings']['timings']
     try:
         original_x, original_y = pyautogui.position()
         client = RuneLiteClientWindow()
@@ -615,27 +702,25 @@ def equip_gear(target_type: str):
             print(f"[ZulrahHelper] Unknown target type: {target_type}. No gear switch performed.")
             return
 
-        # Perform the gear switch
+        # --- MODIFIED FLOW ---
+        # 1. Switch prayers first
+        pyautogui.press('F4')
+        time.sleep(random.uniform(SCRIPT['settings']['timings'] * 1.6, SCRIPT['settings']['timings'] * 3.0) * SCRIPT['state']['timing_skill'])
+        if target_type == "MAGIC":
+            humanizer.click_prayer_slot(17) # Protect from Magic
+            humanizer.click_prayer_slot(20) # Offensive Ranged Prayer
+        elif target_type == "RANGE":
+            humanizer.click_prayer_slot(18) # Protect from Missiles
+            humanizer.click_prayer_slot(21) # Offensive Magic Prayer
+        elif target_type == "MELEE":
+            humanizer.click_prayer_slot(23) # Protect from Melee (or whatever is appropriate)
+            humanizer.click_prayer_slot(21) # Offensive Magic Prayer
+
+        # 2. Switch to inventory and perform gear switch
+        pyautogui.press('F2') # Open inventory tab
+        time.sleep(random.uniform(SCRIPT['settings']['timings'] * 1.6, SCRIPT['settings']['timings'] * 3.0) * SCRIPT['state']['timing_skill'])
         switch_to_gear_set(humanizer, target_gear_set)
 
-        # Handle prayer switching (remains the same)
-        if target_type == "MAGIC":
-            pyautogui.press('F4')
-            time.sleep(random.uniform(0.08, 0.15))
-            humanizer.click_prayer_slot(17) # Protect from Magic
-            pyautogui.press('F2') # Close prayers
-        elif target_type == "RANGE":
-            pyautogui.press('F4')
-            time.sleep(random.uniform(0.08, 0.15))
-            humanizer.click_prayer_slot(18) # Protect from Missiles
-            pyautogui.press('F2') # Close prayers
-        elif target_type == "MELEE":
-            pyautogui.press('F4')
-            time.sleep(random.uniform(0.08, 0.15))
-            humanizer.click_prayer_slot(23) # Protect from Melee (or whatever is appropriate)
-            humanizer.click_prayer_slot(23) # Click again to turn off if already on
-            pyautogui.press('F2') # Close prayers
-        
         pyautogui.moveTo(original_x, original_y)
         global LISTENING_FOR_PHASE_CLICK
         LISTENING_FOR_PHASE_CLICK = True
@@ -709,15 +794,15 @@ def assume_wave_one_is_range():
             SCRIPT['state']['next_phase_style'] = next_phase_info['phases'][1]
 
 def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
-    client = RuneLiteClientWindow()
-    ui = UIInteraction(HumanizedGridClicker(), None, client)
-    api = RuneLiteAPI()
-    
     global SCRIPT, combat_mode_active, PHASE_HANDLER, AWAITING_MAGIC_XP_DROP
+    client = RuneLiteClientWindow()
+    humanized_clicker = HumanizedGridClicker(focus_metric=SCRIPT['state']['timing_skill'])
+    ui = UIInteraction(humanized_clicker, None, client)
+    api = RuneLiteAPI()
     
     if not AWAITING_MAGIC_XP_DROP:
         # Script is being activated by the hotkey, not an XP drop
-        print("Script activated. Waiting for Zul-andra teleport click.")
+        print("Script activated. Waiting for combat to start.")
         SCRIPT['state']["activated"] = True # UI is active
         combat_mode_active = False # Combat is NOT active yet
         return # Don't start combat loop yet
@@ -740,10 +825,11 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
 
     # --- State for Teleport Reset ---
     previous_inventory = None
-    HOME_TELEPORT_IDS = [8013] # House Teleport tablet
+    HOME_TELEPORT_IDS = [8013, 2552] # House Teleport tablet, Ring of Dueling
 
     def check_for_teleport_and_reset(current_inventory, stop_event: threading.Event):
         nonlocal previous_inventory
+        global AWAITING_MAGIC_XP_DROP
         if previous_inventory is None:
             previous_inventory = {f"{item['id']}_{i}": item['quantity'] for i, item in enumerate(current_inventory)}
             return
@@ -757,6 +843,7 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
                 if curr_quantity < prev_quantity:
                     print(f"Home teleport used (Item ID: {item_id}). Stopping combat loop.")
                     stop_event.set() # Stop the combat loop
+                    AWAITING_MAGIC_XP_DROP = True # Ready for next fight
                     break # Exit after finding one used teleport
         
         previous_inventory = current_inventory_map
@@ -799,6 +886,7 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
                     if stop_event.is_set():
                         return # Exit the combat loop
 
+                update_humanizer_focus() # Degrade skill if AFK
                 update(ui, stop_event)
                 SCRIPT['state']["time"] = (time.time() - SCRIPT['state']["start_time"])
                 q.put({'type': 'render', 'state': SCRIPT['state'], 'client_rect': client.get_rect()})
@@ -808,7 +896,6 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
                     time.sleep(loop_interval - elapsed_time)
                 if elapsed_time > loop_interval:
                     print(f"Loop took too long: {elapsed_time:.2f} seconds")
-            q.put({'type': 'close'})
             combat_mode_active = False
             print("Combat mode disabled. Gear/prayer hotkeys are inactive.")
         except Exception as e:
@@ -823,14 +910,16 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
     thread1.start()
 
 def on_death(stop_event: threading.Event):
-    global combat_mode_active
+    global combat_mode_active, AWAITING_MAGIC_XP_DROP
     if combat_mode_active:
         print("Combat mode disabled due to death.")
         combat_mode_active = False
+        AWAITING_MAGIC_XP_DROP = True # Ready for next fight
         stop_event.set()
 
 def on_low_health(ui: UIInteraction, stop_event: threading.Event):
     def consume_food():
+        SCRIPT['state']['last_action_time'] = time.time()
         food_ated, health_ated = 0, 0
         if search_inventory("shark"):
             ui.click_inventory_slot(search_inventory("shark"))
@@ -849,7 +938,7 @@ def on_low_health(ui: UIInteraction, stop_event: threading.Event):
        return True
 
 def panic_teleport(ui: UIInteraction, stop_event):
-    global combat_mode_active, SCRIPT
+    global combat_mode_active, SCRIPT, AWAITING_MAGIC_XP_DROP
     if not combat_mode_active: return
     teleport_slot = search_inventory("teleport")
     if teleport_slot:
@@ -859,11 +948,13 @@ def panic_teleport(ui: UIInteraction, stop_event):
         print("Panic teleporting and stopping combat loop.")
         enable_user_mouse_input()
         combat_mode_active = False
+        AWAITING_MAGIC_XP_DROP = True # Ready for next fight
         stop_event.set()
         return True
 
 def on_low_prayer(ui: UIInteraction, stop_event: threading.Event):
     def consume_potion():
+        SCRIPT['state']['last_action_time'] = time.time()
         potion_slot = search_inventory("prayer") or search_inventory("restore")
         if potion_slot:
             ui.click_inventory_slot(potion_slot)
@@ -876,7 +967,8 @@ def on_low_prayer(ui: UIInteraction, stop_event: threading.Event):
 def manual_blood_blitz():
     global SCRIPT, combat_mode_active
     original_pause = pyautogui.PAUSE
-    pyautogui.PAUSE = SCRIPT['settings']['switch_speed']
+    pyautogui.PAUSE = SCRIPT['settings']['timings']
+    SCRIPT['state']['last_action_time'] = time.time()
     try:
         if not combat_mode_active: return
         original_x, original_y = pyautogui.position()
@@ -884,13 +976,14 @@ def manual_blood_blitz():
         client.bring_to_foreground()
         humanizer = UIInteraction(HumanizedGridClicker(), None, client)
         pyautogui.press('F1')
-        time.sleep(random.uniform(0.08, 0.15))
+        time.sleep(random.uniform(SCRIPT['settings']['timings'] * 1.6, SCRIPT['settings']['timings'] * 3.0) * SCRIPT['state']['timing_skill'])
         humanizer.click_magic_slot(SCRIPT["settings"]["manual_spell_slot"])
-        pyautogui.press('F2')
-        time.sleep(random.uniform(0.08, 0.15))
+        pyautogui.press('F2') # Open inventory tab
+        time.sleep(random.uniform(SCRIPT['settings']['timings'] * 1.6, SCRIPT['settings']['timings'] * 3.0) * SCRIPT['state']['timing_skill'])
         pyautogui.click(original_x, original_y)
     finally:
         pyautogui.PAUSE = original_pause
+    return
 
 def reset_combat_state():
     global SCRIPT
@@ -915,11 +1008,15 @@ def confirm_phase():
         next_phase_info = PHASE_HANDLER.fetch()
         if next_phase_info:
             if PHASE_HANDLER.wave_counted < len(next_phase_info['phases']):
-                SCRIPT['state']['next_phase_style'] = next_phase_info['phases'][PHASE_HANDLER.wave_counted]
+                next_phase_style = next_phase_info['phases'][PHASE_HANDLER.wave_counted]
+                SCRIPT['state']['next_phase_style'] = next_phase_style
+                SCRIPT['state']['phase'] = next_phase_style
             else:
                 SCRIPT['state']['next_phase_style'] = 'END'
+                SCRIPT['state']['phase'] = 'END'
         else:
             SCRIPT['state']['next_phase_style'] = 'UNKNOWN'
+            SCRIPT['state']['phase'] = 'UNKNOWN'
     else:
         print(f"Failed to confirm phase: {current_style}")
 
@@ -945,12 +1042,17 @@ if __name__ == "__main__":
         if not prompt_for_setup():
             exit(0)
 
+    load_humanizer_state() # Load humanizer state at startup
+
     for arg in sys.argv:
         if arg.startswith("--port="): SCRIPT["settings"]["api_port"] = int(arg.split("=")[1])
         elif arg.startswith("--switches="): SCRIPT["settings"]["switch_count"] = int(arg.split("=")[1])
         elif arg.startswith("--spell-num="): SCRIPT["settings"]["manual_spell_slot"] = int(arg.split("=")[1])
         elif arg.startswith("--spell-book="): SCRIPT["settings"]["manual_spell_book"] = arg.split("=")[1]
         elif arg.startswith("--render"): SCRIPT["settings"]["render_grids_and_clicks"] = "true" in arg.lower()
+        elif arg.startswith("--timings="): SCRIPT["settings"]["timings"] = float(arg.split("=")[1])
+        elif arg == "-no-chat-overlay": SCRIPT["settings"]["use_chatbox_overlay"] = False
+        elif arg == "-no-wave-images": SCRIPT["settings"]["use_wave_images"] = False
 
     action_lock = threading.Lock()
     def run_action_once(target_func):
@@ -1074,8 +1176,9 @@ if __name__ == "__main__":
             stop_event.set() # Signal combat loop to stop if running
         else:
             # Script is currently inactive, so activate it
-            print("Activating script. Waiting for Zul-andra teleport click.")
+            print("Activating script. Waiting for combat to start.")
             SCRIPT['state']['activated'] = True
+            AWAITING_MAGIC_XP_DROP = True
             overlay.root.deiconify() # Show overlay
             # The combat_mode_active and AWAITING_MAGIC_XP_DROP remain False until teleport click and XP drop
 
