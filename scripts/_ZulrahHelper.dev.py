@@ -231,6 +231,13 @@ SCRIPT={
         "current_phase_duration_ticks": 0,
         "timing_skill": 1.0, # Multiplier, starts at 1.0, decreases as skill increases
         "last_action_time": 0,
+        "prayer_state": {
+            "protect_magic": False,
+            "protect_range": False,
+            "protect_melee": False,
+            "offensive_magic": False,
+            "offensive_range": False,
+        }
     },
     "setup": [
         {
@@ -467,6 +474,27 @@ def render(client: RuneLiteClientWindow, overlay: WindowOverlay, api: RuneLiteAP
 
     return
 
+def jitter_mouse(duration: float):
+    """Jitters the mouse in a small area for a given duration, returning the cursor to its original position."""
+    if duration <= 0:
+        return
+    original_x, original_y = pyautogui.position()
+    try:
+        num_jitters = random.randint(2, 4)
+        if num_jitters == 0: 
+            time.sleep(duration)
+            return
+        
+        time_per_jitter = duration / num_jitters
+        
+        for _ in range(num_jitters):
+            dx = random.randint(-15, 15)
+            dy = random.randint(-15, 15)
+            move_duration = time_per_jitter * random.uniform(0.8, 1.2)
+            pyautogui.moveRel(dx, dy, duration=move_duration, tween=pyautogui.easeOutQuad)
+    finally:
+        pyautogui.moveTo(original_x, original_y, duration=0.05, tween=pyautogui.easeOutQuad)
+
 def disable_user_mouse_input():
     pyautogui.FAILSAFE = False
     try:
@@ -683,6 +711,47 @@ def switch_to_gear_set(humanizer: UIInteraction, target_gear_set_ids: list[int])
 
     update_timing_skill()
 
+def toggle_prayer(humanizer: UIInteraction, prayer_name: str, slot: int, prayer_type: Literal['defensive', 'offensive']):
+    """Activates a prayer only if it's not already active, and deactivates conflicting prayers."""
+    if SCRIPT['state']['prayer_state'].get(prayer_name, False):
+        print(f"[PrayerManager] Prayer '{prayer_name}' is already considered active.")
+        return # Already on, do nothing
+
+    pyautogui.press('F4') # Ensure prayer tab is open
+    time.sleep(random.uniform(SCRIPT['settings']['timings'] * 1.2, SCRIPT['settings']['timings'] * 2.0) * SCRIPT['state']['timing_skill'])
+    
+    humanizer.click_prayer_slot(slot)
+    print(f"[PrayerManager] Activating prayer '{prayer_name}' at slot {slot}.")
+    SCRIPT['state']['prayer_state'][prayer_name] = True
+
+    # Deactivate other prayers of the same type
+    if prayer_type == 'defensive':
+        conflicting_prayers = ['protect_magic', 'protect_range', 'protect_melee']
+    elif prayer_type == 'offensive':
+        conflicting_prayers = ['offensive_magic', 'offensive_range']
+    else:
+        conflicting_prayers = []
+
+    for p_name in conflicting_prayers:
+        if p_name != prayer_name and SCRIPT['state']['prayer_state'].get(p_name, False):
+            print(f"[PrayerManager] Deactivating conflicting prayer '{p_name}'.")
+            SCRIPT['state']['prayer_state'][p_name] = False
+
+def activate_protect_magic():
+    client = RuneLiteClientWindow()
+    humanizer = UIInteraction(HumanizedGridClicker(), None, client)
+    toggle_prayer(humanizer, 'protect_magic', 17, 'defensive')
+
+def activate_protect_range():
+    client = RuneLiteClientWindow()
+    humanizer = UIInteraction(HumanizedGridClicker(), None, client)
+    toggle_prayer(humanizer, 'protect_range', 18, 'defensive')
+
+def activate_offensive_magic():
+    client = RuneLiteClientWindow()
+    humanizer = UIInteraction(HumanizedGridClicker(), None, client)
+    toggle_prayer(humanizer, 'offensive_magic', 21, 'offensive')
+
 def equip_gear(target_type: str):
     global SCRIPT
     original_pause = pyautogui.PAUSE
@@ -703,18 +772,17 @@ def equip_gear(target_type: str):
             return
 
         # --- MODIFIED FLOW ---
-        # 1. Switch prayers first
-        pyautogui.press('F4')
-        time.sleep(random.uniform(SCRIPT['settings']['timings'] * 1.6, SCRIPT['settings']['timings'] * 3.0) * SCRIPT['state']['timing_skill'])
+        # 1. Switch prayers first using the new stateful function
         if target_type == "MAGIC":
-            humanizer.click_prayer_slot(17) # Protect from Magic
-            humanizer.click_prayer_slot(20) # Offensive Ranged Prayer
+            toggle_prayer(humanizer, 'protect_magic', 17, 'defensive')
+            toggle_prayer(humanizer, 'offensive_range', 20, 'offensive')
         elif target_type == "RANGE":
-            humanizer.click_prayer_slot(18) # Protect from Missiles
-            humanizer.click_prayer_slot(21) # Offensive Magic Prayer
+            toggle_prayer(humanizer, 'protect_range', 18, 'defensive')
+            toggle_prayer(humanizer, 'offensive_magic', 21, 'offensive')
         elif target_type == "MELEE":
-            humanizer.click_prayer_slot(23) # Protect from Melee (or whatever is appropriate)
-            humanizer.click_prayer_slot(21) # Offensive Magic Prayer
+            # Assuming MELEE phase uses Protect from Melee and offensive magic
+            toggle_prayer(humanizer, 'protect_melee', 19, 'defensive')
+            toggle_prayer(humanizer, 'offensive_magic', 21, 'offensive')
 
         # 2. Switch to inventory and perform gear switch
         pyautogui.press('F2') # Open inventory tab
@@ -792,6 +860,7 @@ def assume_wave_one_is_range():
             SCRIPT['state']['phase_start_time'] = time.time()
             SCRIPT['state']['current_phase_duration_ticks'] = next_phase_info['ticks'][0]
             SCRIPT['state']['next_phase_style'] = next_phase_info['phases'][1]
+    activate_offensive_magic() # Start with offensive magic prayer on
 
 def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
     global SCRIPT, combat_mode_active, PHASE_HANDLER, AWAITING_MAGIC_XP_DROP
@@ -892,8 +961,10 @@ def enable_combat_mode(stop_event: threading.Event, q: queue.Queue):
                 q.put({'type': 'render', 'state': SCRIPT['state'], 'client_rect': client.get_rect()})
 
                 elapsed_time = time.time() - start_time
-                if elapsed_time < loop_interval:
-                    time.sleep(loop_interval - elapsed_time)
+                wait_time = loop_interval - elapsed_time
+                if wait_time > 0:
+                    jitter_mouse(duration=wait_time)
+
                 if elapsed_time > loop_interval:
                     print(f"Loop took too long: {elapsed_time:.2f} seconds")
             combat_mode_active = False
@@ -980,7 +1051,7 @@ def manual_blood_blitz():
         humanizer.click_magic_slot(SCRIPT["settings"]["manual_spell_slot"])
         pyautogui.press('F2') # Open inventory tab
         time.sleep(random.uniform(SCRIPT['settings']['timings'] * 1.6, SCRIPT['settings']['timings'] * 3.0) * SCRIPT['state']['timing_skill'])
-        pyautogui.click(original_x, original_y)
+        pyautogui.moveTo(original_x, original_y)
     finally:
         pyautogui.PAUSE = original_pause
     return
@@ -994,6 +1065,9 @@ def reset_combat_state():
     SCRIPT['state']['phase'] = "UNKNOWN"
     SCRIPT['state']['manual_phase_index'] = 0
     SCRIPT['state']['Warning'] = "State Reset"
+    # Reset prayer state tracker
+    for prayer in SCRIPT['state']['prayer_state']:
+        SCRIPT['state']['prayer_state'][prayer] = False
 
 def confirm_phase():
     if not combat_mode_active: return
@@ -1072,6 +1146,8 @@ if __name__ == "__main__":
     keyboard.add_hotkey(SCRIPT['settings']['hk_range'], lambda: create_action_thread(equip_range))
     keyboard.add_hotkey(SCRIPT['settings']['hk_melee'], lambda: create_action_thread(equip_melee))
     keyboard.add_hotkey("r", lambda: create_action_thread(manual_blood_blitz))
+    keyboard.add_hotkey("a", lambda: create_action_thread(activate_protect_magic))
+    keyboard.add_hotkey("s", lambda: create_action_thread(activate_protect_range))
     keyboard.add_hotkey("space", lambda: create_action_thread(confirm_phase))
     keyboard.add_hotkey("ctrl+r", lambda: create_action_thread(reset_combat_state))
 
