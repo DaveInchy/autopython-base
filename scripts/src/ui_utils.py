@@ -13,6 +13,39 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from .client_window import RuneLiteClientWindow
 from .window_overlay import WindowOverlay
 
+# --- Coordinate Transformation for Stretched Mode ---
+class CoordinateTransformer:
+    """Handles the transformation of coordinates for stretched client mode."""
+    # Reference dimensions for a standard fixed-mode client
+    REF_CLIENT_WIDTH = 765
+    REF_CLIENT_HEIGHT = 503
+
+    def __init__(self, client_window: RuneLiteClientWindow):
+        self.client = client_window or None;
+
+    def transform_stretched_coords(self, relative_coords: tuple) -> tuple | None:
+        """Transforms reference-relative (bottom-right) coordinates into live, absolute screen coordinates for stretched mode."""
+        live_client_rect = self.client.get_client_rect()
+        if not live_client_rect:
+            print("Error: Live client rectangle not found. Cannot transform coordinates.")
+            return None
+
+        ref_br_x, ref_br_y = relative_coords # These are relative to bottom-right of REF_CLIENT
+
+        # Calculate scaling factors based on live client dimensions vs. reference client dimensions
+        scale_x = live_client_rect['w'] / (self.REF_CLIENT_WIDTH)
+        scale_y = live_client_rect['h'] / (self.REF_CLIENT_HEIGHT + 38)
+
+        # Scale the bottom-right relative coordinates
+        scaled_br_x = ref_br_x * scale_x
+        scaled_br_y = ref_br_y * scale_y
+
+        # Convert scaled bottom-right relative coordinates to absolute screen coordinates
+        live_abs_x = live_client_rect['right'] - scaled_br_x
+        live_abs_y = live_client_rect['bottom'] - scaled_br_y
+
+        return (int(live_abs_x), int(live_abs_y))
+
 # --- Data Loading ---
 def _load_ui_data():
     """Loads the JSON file."""
@@ -133,7 +166,7 @@ class HumanizedGridClicker:
         self.proficiency[grid_name] += 1
         
         # --- Misclick and Accuracy Logic based on Focus Metric ---
-        MAX_MISCLICK_CHANCE = 0.2 # 20% chance when focus is 0.0
+        MAX_MISCLICK_CHANCE = 0.08 # 8% chance when focus is 0.0
         ACCURACY_DEGRADATION_FACTOR = 2.0 # std dev can be up to 2x larger when focus is 0.0
 
         # Misclick chance increases as focus decreases
@@ -177,17 +210,15 @@ class UIInteraction:
         self.overlay = overlay
         self.client_window = client_window
         self.templates_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), templates_dir))
+        # Instantiate and calibrate the transformer
+        self.transformer = CoordinateTransformer(self.client_window)
 
     def _get_abs_coords(self, relative_coords: tuple) -> tuple | None:
-        win_rect = self.client_window.get_rect()
-        if not win_rect: return None
-        abs_x = win_rect['left'] + (win_rect["w"] - relative_coords[0])
-        abs_y = win_rect['top'] + (win_rect["h"] - relative_coords[1])
-        return (abs_x, abs_y)
+        """Transforms reference-relative coordinates to absolute screen coordinates using the transformer."""
+        return self.transformer.transform_stretched_coords(relative_coords)
 
     def _get_abs_coords_from_image(self, template_filename: str) -> tuple | None:
-        template_path = os.path.join(self.templates_dir, template_filename)
-        win_rect = self.client_window.get_rect()
+        win_rect = self.client_window.get_client_rect()
         if not win_rect: return None
         region = (win_rect['left'], win_rect['top'], win_rect['w'], win_rect['h'])
         return find_ui_element_by_image(template_path, region=region)
