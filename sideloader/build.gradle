@@ -1,0 +1,79 @@
+plugins {
+    id 'java'
+}
+
+repositories {
+    mavenLocal()
+    maven {
+        url = 'https://repo.runelite.net'
+        content {
+            includeGroupByRegex("net\\.runelite.*")
+        }
+    }
+    mavenCentral()
+}
+
+def runeLiteVersion = 'latest.release'
+
+dependencies {
+    compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
+
+    // Used to send HTTP requests to the external server
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+    // Used to embed an HTTP server for the /poll endpoint
+    implementation 'io.javalin:javalin:5.6.3'
+    // Javalin needs a logger backend
+    implementation 'org.slf4j:slf4j-simple:2.0.7'
+
+    // RuneLite already includes Gson, but we specify it here to ensure it's available.
+    // Using compileOnly as we expect it from the parent classloader.
+    compileOnly 'com.google.code.gson:gson:2.10.1'
+
+    compileOnly 'org.projectlombok:lombok:1.18.22'
+    annotationProcessor 'org.projectlombok:lombok:1.18.22'
+
+    testImplementation 'junit:junit:4.12'
+    testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion
+    testImplementation group: 'net.runelite', name: 'jshell', version: runeLiteVersion
+}
+
+group = 'nl.doonline.ZSCompetitions'
+version = '1.0-SNAPSHOT'
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release.set(11)
+}
+
+tasks.register('shadowJar', Jar) {
+    // We want to build the plugin, not the tests
+    dependsOn configurations.runtimeClasspath
+
+    // The manifest should not have a Main-Class for a plugin
+    manifest {
+        attributes('Multi-Release': true)
+    }
+
+    // Don't include test code
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from sourceSets.main.output
+    from {
+        // Bundle the dependencies that are marked as 'implementation'
+        configurations.runtimeClasspath.collect { file ->
+            file.isDirectory() ? file : zipTree(file)
+        }
+    }
+
+    // Exclusions are fine
+    exclude 'META-INF/INDEX.LIST'
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    exclude '**/module-info.class'
+
+    group = BasePlugin.BUILD_GROUP
+    // The classifier makes it clear this is the bundled jar
+    archiveClassifier.set('shadow')
+    archiveFileName.set("${rootProject.name}-${project.version}-all.jar")
+}

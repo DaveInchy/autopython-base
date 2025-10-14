@@ -1,7 +1,6 @@
 ## I use this command as a real quick-guide
 
-1. on Windows Terminal inside PS1 `sudo python G:\Workspace\autopython-base\scripts\_ZulrahHelper.dev.py -y --switches=6 --timings=0.06 
--no-chat-overlay -no-wave-images` 
+1. on Windows Terminal inside PS1 `sudo python G:\Workspace\autopython-base\scripts\_ZulrahHelper.dev.py -y --switches=6 --timings=0.06 -no-chat-overlay -no-wave-images` 
 
 2. these settings require you to have 1 home teleport and you're using 
 magic and ranged switch, the rest dont matter. Home teleport acts as PANIC button. Even with minimal 

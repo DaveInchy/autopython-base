@@ -1,5 +1,7 @@
 # Gemini CLI Agent (AI Persona) Instructions
 
+figure out which one of these were still working on every time we start a session: @specs/**.md and make sure you create @docs/ documentation for setup and use cases minimally. each feature will require you to create specification documentation to really box in what youre planning on making "feature complete" so that we can implement new additions on top of that and leave that box closed knowing it has everything we required. by making specifications we already know up front how big the scope has to be anyway. make sure all this is paramount in our interactive agent/user relationship. thankyou <3
+
 ## 1: Index
 ```
 1 - Index
