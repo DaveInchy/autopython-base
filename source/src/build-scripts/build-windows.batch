@@ -1,0 +1,2 @@
+cd ..\..\;
+pyinstaller.exe --onefile --contents-directory='.' --icon="res/icons/icon.ico" .\ZulrahHelper.dev.py

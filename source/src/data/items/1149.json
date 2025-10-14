@@ -1,0 +1,71 @@
+{
+  "id": 1149,
+  "name": "Dragon med helm",
+  "resizeX": 128,
+  "resizeY": 128,
+  "resizeZ": 128,
+  "xan2d": 92,
+  "yan2d": 136,
+  "zan2d": 0,
+  "cost": 100000,
+  "tradeable": true,
+  "stackable": false,
+  "inventoryModel": 2477,
+  "wearPos1": 0,
+  "wearPos2": 8,
+  "wearPos3": 0,
+  "members": true,
+  "colorFind": [
+    61
+  ],
+  "colorReplace": [
+    924
+  ],
+  "zoom2d": 670,
+  "xOffset2d": 3,
+  "yOffset2d": -5,
+  "ambient": 0,
+  "contrast": 0,
+  "options": [
+    null,
+    null,
+    "Take",
+    null,
+    null
+  ],
+  "interfaceOptions": [
+    null,
+    "Wear",
+    null,
+    null,
+    "Drop"
+  ],
+  "maleModel0": 219,
+  "maleModel1": 239,
+  "maleModel2": -1,
+  "maleOffset": 0,
+  "maleHeadModel": 57,
+  "maleHeadModel2": 71,
+  "femaleModel0": 395,
+  "femaleModel1": 413,
+  "femaleModel2": -1,
+  "femaleOffset": 0,
+  "femaleHeadModel": 117,
+  "femaleHeadModel2": 129,
+  "category": 2,
+  "notedID": 1150,
+  "notedTemplate": -1,
+  "team": 0,
+  "weight": 1360,
+  "shiftClickDropIndex": -2,
+  "boughtId": -1,
+  "boughtTemplateId": -1,
+  "placeholderId": 14142,
+  "placeholderTemplateId": -1,
+  "params": {
+    "434": 1,
+    "258": 47,
+    "1564": 0,
+    "436": 60
+  }
+}

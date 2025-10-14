@@ -1,0 +1,68 @@
+{
+  "id": 26205,
+  "name": "Red icon",
+  "resizeX": 128,
+  "resizeY": 128,
+  "resizeZ": 128,
+  "xan2d": 400,
+  "yan2d": 948,
+  "zan2d": 0,
+  "cost": 1,
+  "tradeable": false,
+  "stackable": false,
+  "inventoryModel": 41422,
+  "wearPos1": 11,
+  "wearPos2": 0,
+  "wearPos3": 0,
+  "members": false,
+  "colorFind": [
+    417
+  ],
+  "colorReplace": [
+    939
+  ],
+  "zoom2d": 2140,
+  "xOffset2d": 3,
+  "yOffset2d": 6,
+  "ambient": 0,
+  "contrast": 0,
+  "options": [
+    null,
+    null,
+    "Take",
+    null,
+    null
+  ],
+  "interfaceOptions": [
+    null,
+    "Equip",
+    null,
+    null,
+    "Drop"
+  ],
+  "maleModel0": 246,
+  "maleModel1": 33196,
+  "maleModel2": -1,
+  "maleOffset": 0,
+  "maleHeadModel": -1,
+  "maleHeadModel2": -1,
+  "femaleModel0": 33196,
+  "femaleModel1": -1,
+  "femaleModel2": -1,
+  "femaleOffset": 0,
+  "femaleHeadModel": -1,
+  "femaleHeadModel2": -1,
+  "category": 1586,
+  "notedID": -1,
+  "notedTemplate": -1,
+  "team": 1,
+  "weight": 1,
+  "shiftClickDropIndex": -2,
+  "boughtId": -1,
+  "boughtTemplateId": -1,
+  "placeholderId": -1,
+  "placeholderTemplateId": -1,
+  "params": {
+    "295": 1
+  }
+}

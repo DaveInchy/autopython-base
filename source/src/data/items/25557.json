@@ -1,0 +1,70 @@
+{
+  "id": 25557,
+  "name": "Dark flippers",
+  "resizeX": 128,
+  "resizeY": 128,
+  "resizeZ": 128,
+  "xan2d": 312,
+  "yan2d": 8,
+  "zan2d": 0,
+  "cost": 1,
+  "tradeable": false,
+  "stackable": false,
+  "inventoryModel": 41622,
+  "wearPos1": 10,
+  "wearPos2": 0,
+  "wearPos3": 0,
+  "members": true,
+  "colorFind": [
+    4626,
+    11171
+  ],
+  "colorReplace": [
+    2452,
+    -9289
+  ],
+  "zoom2d": 1730,
+  "xOffset2d": -5,
+  "yOffset2d": 18,
+  "ambient": 0,
+  "contrast": 0,
+  "options": [
+    null,
+    null,
+    "Take",
+    null,
+    null
+  ],
+  "interfaceOptions": [
+    null,
+    "Wear",
+    null,
+    null,
+    "Drop"
+  ],
+  "maleModel0": 41623,
+  "maleModel1": -1,
+  "maleModel2": -1,
+  "maleOffset": 0,
+  "maleHeadModel": -1,
+  "maleHeadModel2": -1,
+  "femaleModel0": 41624,
+  "femaleModel1": -1,
+  "femaleModel2": -1,
+  "femaleOffset": 0,
+  "femaleHeadModel": -1,
+  "femaleHeadModel2": -1,
+  "category": 0,
+  "notedID": -1,
+  "notedTemplate": -1,
+  "team": 0,
+  "weight": 340,
+  "shiftClickDropIndex": -2,
+  "boughtId": -1,
+  "boughtTemplateId": -1,
+  "placeholderId": 25558,
+  "placeholderTemplateId": -1,
+  "params": {
+    "295": 1
+  }
+}
